@@ -37,6 +37,18 @@ enum ApplicationPaths {
         return dir
     }
 
+    static var updateDownloads: URL {
+        let dir = supportRoot.appendingPathComponent("updates/downloads", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
+    static var updateStaging: URL {
+        let dir = supportRoot.appendingPathComponent("updates/staging", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir
+    }
+
     static var geocodeCache: URL {
         supportRoot.appendingPathComponent("geocode-cache.json")
     }

@@ -27,12 +27,26 @@ targets:
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.photography
         INFOPLIST_KEY_PhotoViewerGitHubRepository: engineeritdevelopment-hk/photo-viewer-app
+    dependencies:
+      - target: PhotoViewerInstallHelper
+        embed: true
     entitlements:
       path: PhotoViewer/PhotoViewer.entitlements
       properties:
         com.apple.security.app-sandbox: true
         com.apple.security.files.user-selected.read-write: true
         com.apple.security.files.bookmarks.app-scope: true
+  PhotoViewerInstallHelper:
+    type: tool
+    platform: macOS
+    sources:
+      - path: PhotoViewerInstallHelper
+    settings:
+      base:
+        PRODUCT_NAME: PhotoViewerInstallHelper
+        PRODUCT_BUNDLE_IDENTIFIER: com.photoviewer.install-helper
+        SKIP_INSTALL: NO
+        ENABLE_HARDENED_RUNTIME: YES
   PhotoViewerTests:
     type: bundle.unit-test
     platform: macOS

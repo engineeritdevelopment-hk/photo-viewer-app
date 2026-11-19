@@ -7,4 +7,6 @@ struct ReleaseUpdateOffer: Equatable, Sendable {
   let title: String
   let releaseNotes: String
   let releasePageURL: URL
+  /// Zip asset from the GitHub release (auto-install).
+  let downloadURL: URL?
 }

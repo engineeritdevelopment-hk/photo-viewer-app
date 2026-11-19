@@ -57,12 +57,15 @@ actor ReleaseUpdateChecker {
       ?? decoded.tag_name
     let notes = decoded.body?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
+    let downloadURL = ReleaseAssetPicker.preferredZipURL(from: decoded.assets ?? [])
+
     return ReleaseUpdateOffer(
       version: version,
       versionLabel: decoded.tag_name,
       title: title,
       releaseNotes: notes,
-      releasePageURL: decoded.html_url
+      releasePageURL: decoded.html_url,
+      downloadURL: downloadURL
     )
   }
 }
@@ -74,6 +77,7 @@ private struct GitHubRelease: Decodable {
   let body: String?
   let draft: Bool?
   let prerelease: Bool?
+  let assets: [GitHubReleaseAsset]?
 }
 
 private extension String {

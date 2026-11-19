@@ -2,28 +2,26 @@ import SwiftUI
 
 struct AppUpdateAlertsModifier: ViewModifier {
   @Bindable var updates: AppUpdateModel
+  @Environment(\.scenePhase) private var scenePhase
 
   func body(content: Content) -> some View {
     content
       .task {
-        await updates.performAutomaticCheckIfNeeded()
+        await updates.performCheckOnLaunch()
       }
-      .alert(
-        "Update Available",
+      .onChange(of: scenePhase) { _, phase in
+        guard phase == .active else { return }
+        Task { await updates.performPeriodicCheckIfNeeded() }
+      }
+      .sheet(
         isPresented: Binding(
           get: { updates.offerToPresent != nil },
-          set: { if !$0 { updates.offerToPresent = nil } }
-        ),
-        presenting: updates.offerToPresent
-      ) { offer in
-        Button("Download from GitHub") {
-          updates.openReleasePage(for: offer)
+          set: { if !$0, updates.installPhase == .idle { updates.offerToPresent = nil } }
+        )
+      ) {
+        if let offer = updates.offerToPresent {
+          AppUpdateSheet(offer: offer, updates: updates)
         }
-        Button("Not Now", role: .cancel) {
-          updates.dismissOffer(offer)
-        }
-      } message: { offer in
-        Text(updateMessage(for: offer))
       }
       .alert(item: $updates.manualCheckAlert) { alert in
         Alert(
@@ -32,19 +30,6 @@ struct AppUpdateAlertsModifier: ViewModifier {
           dismissButton: .default(Text("OK"))
         )
       }
-  }
-
-  private func updateMessage(for offer: ReleaseUpdateOffer) -> String {
-    var lines = ["A newer version (\(offer.versionLabel)) is available."]
-    if !offer.releaseNotes.isEmpty {
-      let snippet = String(offer.releaseNotes.prefix(400))
-      lines.append(snippet)
-      if offer.releaseNotes.count > 400 {
-        lines.append("…")
-      }
-    }
-    lines.append("Open the release page to download.")
-    return lines.joined(separator: "\n\n")
   }
 }
 

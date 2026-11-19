@@ -5,7 +5,6 @@ enum AppPreferences {
     static let showPeopleBarKey = "showPeopleBar"
     static let photoSortKey = "photoSort"
     private static let lastUpdateCheckKey = "lastAutomaticUpdateCheckDate"
-    private static let dismissedUpdateVersionKey = "dismissedUpdateVersionLabel"
 
     static var showPeopleBar: Bool {
         get {
@@ -37,11 +36,4 @@ enum AppPreferences {
         UserDefaults.standard.set(Date(), forKey: lastUpdateCheckKey)
     }
 
-    static func isUpdateDismissed(label: String) -> Bool {
-        UserDefaults.standard.string(forKey: dismissedUpdateVersionKey) == label
-    }
-
-    static func dismissUpdate(label: String) {
-        UserDefaults.standard.set(label, forKey: dismissedUpdateVersionKey)
-    }
 }

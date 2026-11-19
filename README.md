@@ -23,6 +23,19 @@ The app compares **`CFBundleShortVersionString`** (see `MARKETING_VERSION` in `p
 
 Tag releases as `v1.0.1` (or `1.0.1`); drafts and prereleases are ignored.
 
+### In-app install
+
+Each release should attach a **`.zip`** containing **`Photo Viewer.app`** at any depth in the archive (for example `Photo-Viewer-1.0.1-mac.zip`). When the user clicks **Update**, the app downloads that asset, quits, replaces itself via `PhotoViewerInstallHelper`, and relaunches.
+
+Build a release zip from a signed Release build:
+
+```bash
+cd build/xcode/Build/Products/Release
+ditto -c -k --sequesterRsrc --keepParent "Photo Viewer.app" "Photo-Viewer-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "Photo Viewer.app/Contents/Info.plist")-mac.zip"
+```
+
+Upload that zip to the GitHub release assets when publishing.
+
 ## Build and run
 
 ```bash
