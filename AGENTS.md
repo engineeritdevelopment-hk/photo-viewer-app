@@ -6,6 +6,7 @@ Native **SwiftUI** photo library app. Generated Xcode project via **XcodeGen** (
 
 | Task | Document |
 |------|-----------|
+| **Build, bump version, deploy release** | [`.cursor/skills/build-and-deploy/SKILL.md`](.cursor/skills/build-and-deploy/SKILL.md) |
 | **Ship a version / GitHub release / in-app updates** | [`docs/DEPLOY_AND_UPDATES.md`](docs/DEPLOY_AND_UPDATES.md) |
 | Domain terms | [`GLOSSARY.md`](GLOSSARY.md) |
 | Product decisions | [`docs/adr/`](docs/adr/) |
@@ -52,10 +53,10 @@ After editing `project.yml`, always run **`xcodegen generate`** before building.
 
 ## Release shortcut
 
-For a full publish checklist, run or follow:
-
 ```bash
+./scripts/bump-version.sh patch   # optional
 ./scripts/release.sh
+./scripts/install-local.sh      # optional smoke test
 ```
 
-See [`docs/DEPLOY_AND_UPDATES.md`](docs/DEPLOY_AND_UPDATES.md) for verification steps and failure modes.
+Agents: read **`.cursor/skills/build-and-deploy/SKILL.md`** when the user mentions build, deploy, release, or version bumps.

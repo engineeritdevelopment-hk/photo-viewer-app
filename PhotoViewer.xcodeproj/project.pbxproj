@@ -75,6 +75,7 @@
 		DE6B3FCFDFCB0A0B631D3812 /* LibrarySelectionActionBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34EE57C38459E0EBBB43DE96 /* LibrarySelectionActionBar.swift */; };
 		E1AEF9B5B66E88086227F153 /* FaceThumbnailWriter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 757A4A8DF46132FB633C03A1 /* FaceThumbnailWriter.swift */; };
 		E262E674DE8CCD8DA9B3CD77 /* ReleaseAssetPickerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7480967C0F6688A58B9609A4 /* ReleaseAssetPickerTests.swift */; };
+		E47B453D5C4ACD4FBA20793E /* TitleBarAccessoryInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FACBC0E2186076BC54958C1 /* TitleBarAccessoryInstaller.swift */; };
 		E56879E67C69D7E8648170AC /* ProjectStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A85B3E739853B236792B839A /* ProjectStore.swift */; };
 		E994CBD37CC98C4B34213BA7 /* BookmarkStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5D5A1C3FAA89290AF651742 /* BookmarkStore.swift */; };
 		E9EA965980B9538E9F532D72 /* LibraryViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EA5FA5587C3E30E74B30A73 /* LibraryViewModel.swift */; };
@@ -167,6 +168,7 @@
 		97AEF298E548D54DD355B735 /* FaceCropExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceCropExtractor.swift; sourceTree = "<group>"; };
 		9EB871920AF5615D519FF423 /* AppInfoButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppInfoButton.swift; sourceTree = "<group>"; };
 		9EBD735B0770DDA64D2DD6AF /* AnalysisPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisPipeline.swift; sourceTree = "<group>"; };
+		9FACBC0E2186076BC54958C1 /* TitleBarAccessoryInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TitleBarAccessoryInstaller.swift; sourceTree = "<group>"; };
 		A3EAFC521D67606C5DDBF979 /* TempDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TempDirectory.swift; sourceTree = "<group>"; };
 		A496EFC95DEF33D951C5C802 /* LibraryDeleteBinBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDeleteBinBar.swift; sourceTree = "<group>"; };
 		A49C03A5C466B863C4F34676 /* LibraryAnalysisBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryAnalysisBar.swift; sourceTree = "<group>"; };
@@ -276,6 +278,7 @@
 				F6ADC04BE670223A5C924502 /* SidebarListRowStyle.swift */,
 				D8699268F94ED3613067B686 /* SidebarSectionToolbar.swift */,
 				1DF39FDBFF07A8A14EFEA93C /* ThumbnailCell.swift */,
+				9FACBC0E2186076BC54958C1 /* TitleBarAccessoryInstaller.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -558,6 +561,7 @@
 				F633F4E159F23C9264C4ACF3 /* SourceFileDeletionService.swift in Sources */,
 				3BB7459F3169246DFD674B3D /* ThumbnailCell.swift in Sources */,
 				576AC52165D987FA561C2AFD /* ThumbnailService.swift in Sources */,
+				E47B453D5C4ACD4FBA20793E /* TitleBarAccessoryInstaller.swift in Sources */,
 				02EEF493C3EF06957901A862 /* UpdateConfiguration.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -638,7 +642,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = PhotoViewer/PhotoViewer.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -649,7 +653,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.photoviewer.app;
 				PRODUCT_NAME = "Photo Viewer";
 				SDKROOT = macosx;
@@ -679,7 +683,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = PhotoViewer/PhotoViewer.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -690,7 +694,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.0.1;
+				MARKETING_VERSION = 1.0.2;
 				PRODUCT_BUNDLE_IDENTIFIER = com.photoviewer.app;
 				PRODUCT_NAME = "Photo Viewer";
 				SDKROOT = macosx;

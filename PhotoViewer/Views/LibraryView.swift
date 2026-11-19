@@ -29,10 +29,10 @@ struct LibraryView: View {
         ZStack {
             NavigationSplitView {
                 sidebar
-                    .navigationSplitViewColumnWidth(min: 200, ideal: 232)
+                    .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 260)
             } detail: {
                 libraryMainColumn
-                    .frame(minWidth: 360, maxWidth: .infinity, maxHeight: .infinity)
+                    .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
             }
             .navigationSplitViewStyle(.balanced)
 
@@ -63,7 +63,7 @@ struct LibraryView: View {
             storedPhotoSort = newValue.rawValue
         }
         .onDisappear { model.close() }
-        .frame(minWidth: 720, minHeight: 480)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .alert("New album", isPresented: $showNewAlbumPrompt) {
             TextField("Name", text: $newAlbumName)
             Button("Cancel", role: .cancel) {
@@ -128,14 +128,13 @@ struct LibraryView: View {
 
     private var sidebar: some View {
         List(selection: $model.selectedSidebarKey) {
-            Section {
-                Button(action: onBackToProjects) {
-                    Label("Projects", systemImage: "chevron.left")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .buttonStyle(.plain)
-                .sidebarListRowInsets()
+            Button(action: onBackToProjects) {
+                SidebarStandardLabel(title: "Projects", systemImage: "chevron.left")
             }
+            .buttonStyle(SidebarListRowButtonStyle(isSelected: false, density: .compact))
+            .listRowBackground(Color.clear)
+            .sidebarBackRowInsets()
+            .accessibilityLabel("Back to projects")
 
             Section("Filter") {
                 filterSidebarRow("All Photos", systemImage: "photo.on.rectangle", key: nil)
@@ -249,9 +248,6 @@ struct LibraryView: View {
             }
         }
         .listStyle(.sidebar)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            AppInfoSidebarHeader()
-        }
         .onChange(of: model.selectedSidebarKey) { _, newValue in
             model.applySidebarKey(newValue)
             revealFilterSidebarSelection(newValue)

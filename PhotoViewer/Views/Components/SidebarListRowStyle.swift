@@ -3,6 +3,8 @@ import SwiftUI
 enum SidebarListMetrics {
     static let rowInsets = EdgeInsets(top: 1, leading: 2, bottom: 1, trailing: 6)
     static let compactRowInsets = EdgeInsets(top: 0, leading: 2, bottom: 0, trailing: 6)
+    /// “Back to projects” sits flush with other rows; default List + Section chrome adds too much leading space.
+    static let backRowInsets = EdgeInsets(top: 0, leading: -4, bottom: 4, trailing: 6)
     static let iconWidth: CGFloat = 16
     static let rowHorizontalPadding: CGFloat = 5
     static let rowVerticalPadding: CGFloat = 3
@@ -101,6 +103,10 @@ struct SidebarListRowButtonStyle: ButtonStyle {
 extension View {
     func sidebarListRowInsets(compact: Bool = false) -> some View {
         listRowInsets(compact ? SidebarListMetrics.compactRowInsets : SidebarListMetrics.rowInsets)
+    }
+
+    func sidebarBackRowInsets() -> some View {
+        listRowInsets(SidebarListMetrics.backRowInsets)
     }
 
     /// Non-button placeholder row (e.g. “New album…”) aligned with selectable rows.

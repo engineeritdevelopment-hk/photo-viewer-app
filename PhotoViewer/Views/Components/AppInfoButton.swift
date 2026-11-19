@@ -4,32 +4,46 @@ struct AppInfoButton: View {
     enum Style {
         case compact
         case prominent
+        /// Plain chrome in the system title bar (no tint or badge-like fill).
+        case titlebar
     }
 
-    @Environment(AppUpdateModel.self) private var appUpdate
+    @Bindable var appUpdate: AppUpdateModel
     @State private var showAbout = false
     var style: Style = .prominent
 
     private var iconSize: CGFloat {
-        style == .prominent ? 15 : SidebarSectionToolbarMetrics.iconPointSize
+        switch style {
+        case .prominent: return 15
+        case .titlebar: return 14
+        case .compact: return SidebarSectionToolbarMetrics.iconPointSize
+        }
     }
 
     private var hitSide: CGFloat {
-        style == .prominent ? 26 : SidebarSectionToolbarMetrics.hitSide
+        switch style {
+        case .titlebar: return 22
+        case .prominent: return 26
+        case .compact: return SidebarSectionToolbarMetrics.hitSide
+        }
+    }
+
+    private var iconName: String {
+        style == .titlebar ? "info.circle" : "info.circle.fill"
     }
 
     var body: some View {
         Button {
             showAbout = true
         } label: {
-            Image(systemName: "info.circle.fill")
-                .font(.system(size: iconSize, weight: .semibold))
-                .symbolRenderingMode(.hierarchical)
-                .foregroundStyle(style == .prominent ? Color.accentColor : Color.secondary)
+            Image(systemName: iconName)
+                .font(.system(size: iconSize, weight: .medium))
+                .symbolRenderingMode(style == .titlebar ? .monochrome : .hierarchical)
+                .foregroundStyle(foregroundStyle)
                 .frame(width: hitSide, height: hitSide)
                 .contentShape(RoundedRectangle(cornerRadius: SidebarSectionToolbarMetrics.cornerRadius, style: .continuous))
         }
-        .buttonStyle(AppInfoButtonStyle(prominent: style == .prominent))
+        .buttonStyle(AppInfoButtonStyle(style: style))
         .help("About Photo Viewer — version and updates")
         .popover(isPresented: $showAbout, arrowEdge: .bottom) {
             AppAboutPopover {
@@ -38,48 +52,38 @@ struct AppInfoButton: View {
             }
         }
     }
+
+    private var foregroundStyle: Color {
+        switch style {
+        case .titlebar, .compact:
+            return Color.secondary
+        case .prominent:
+            return Color.accentColor
+        }
+    }
 }
 
 private struct AppInfoButtonStyle: ButtonStyle {
-    var prominent: Bool
+    var style: AppInfoButton.Style
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .background {
-                if prominent {
+                switch style {
+                case .titlebar:
+                    EmptyView()
+                case .prominent:
                     RoundedRectangle(cornerRadius: SidebarSectionToolbarMetrics.cornerRadius, style: .continuous)
                         .fill(
                             configuration.isPressed
                                 ? Color.accentColor.opacity(0.18)
                                 : Color.accentColor.opacity(0.1)
                         )
-                } else {
+                case .compact:
                     RoundedRectangle(cornerRadius: SidebarSectionToolbarMetrics.cornerRadius, style: .continuous)
                         .fill(configuration.isPressed ? Color.primary.opacity(0.1) : Color.clear)
                 }
             }
-    }
-}
-
-struct AppInfoSidebarHeader: View {
-    var body: some View {
-        HStack(alignment: .center, spacing: 8) {
-            AppInfoButton(style: .prominent)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Photo Viewer")
-                    .font(.subheadline.weight(.semibold))
-                if let version = AppVersion.current()?.displayString {
-                    Text("Version \(version)")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 8)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .overlay(alignment: .bottom) { Divider() }
     }
 }
 

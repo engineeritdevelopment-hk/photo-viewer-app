@@ -9,9 +9,12 @@ struct PhotoViewerApp: App {
             ContentView()
                 .environment(appUpdate)
                 .appUpdateAlerts(using: appUpdate)
+                .installTitlebarLeadingAccessory(appUpdate: appUpdate)
+                .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         }
         .defaultSize(width: 1080, height: 640)
         .windowResizability(.contentMinSize)
+        .windowToolbarStyle(.unifiedCompact)
         .commands {
             CommandGroup(replacing: .appInfo) {
                 Button("About Photo Viewer") {

@@ -52,6 +52,7 @@ final class LibraryViewModel {
     private var index: PhotoIndexStore?
     private var catalogTask: Task<Void, Never>?
     private var analysisTask: Task<Void, Never>?
+    private var openingIndexTask: Task<Void, Never>?
     private var visiblePathsReloadToken = 0
     private var appliedVisiblePathsQueryFingerprint: String?
     private var generation = 0
@@ -64,10 +65,22 @@ final class LibraryViewModel {
     }
 
     func onAppear() {
-        Task {
+        Task(priority: .userInitiated) {
+            await Task.yield()
+            startIfNeeded()
             await Task.yield()
             normalizeFavoritesAlbum()
-            startIfNeeded()
+        }
+    }
+
+    /// Open the SQLite index off the main thread as soon as the user picks this project.
+    func prepareForOpening() {
+        guard index == nil, openingIndexTask == nil else { return }
+        let projectId = project.id
+        openingIndexTask = Task(priority: .userInitiated) { [weak self] in
+            guard let self else { return }
+            await self.installIndexIfNeeded(projectId: projectId)
+            self.openingIndexTask = nil
         }
     }
 
@@ -78,6 +91,16 @@ final class LibraryViewModel {
                 || ($0.name == AlbumConstants.favoritesAlbumName && $0.kind == .manual)
         }) else { return }
         var album = project.albums[index]
+        let hasDuplicateManualFavorites = project.albums.contains { other in
+            other.id != album.id
+                && other.name == AlbumConstants.favoritesAlbumName
+                && other.kind == .manual
+        }
+        let alreadyNormalized = album.id == AlbumConstants.favoritesAlbumId
+            && album.name == AlbumConstants.favoritesAlbumName
+            && album.kind == .favorites
+            && !hasDuplicateManualFavorites
+        guard !alreadyNormalized else { return }
         album.id = AlbumConstants.favoritesAlbumId
         album.name = AlbumConstants.favoritesAlbumName
         album.kind = .favorites
@@ -94,10 +117,13 @@ final class LibraryViewModel {
         generation += 1
         let priorCatalog = catalogTask
         let priorAnalysis = analysisTask
+        let priorIndexOpen = openingIndexTask
         catalogTask = nil
         analysisTask = nil
+        openingIndexTask = nil
         priorCatalog?.cancel()
         priorAnalysis?.cancel()
+        priorIndexOpen?.cancel()
         Task {
             await priorCatalog?.value
             await priorAnalysis?.value
@@ -105,10 +131,37 @@ final class LibraryViewModel {
         }
     }
 
-    private func ensureIndex() throws {
-        if index == nil {
-            index = try PhotoIndexStore(projectId: project.id)
+    private func installIndexIfNeeded(projectId: String) async {
+        guard index == nil else { return }
+        do {
+            let store = try await Task.detached(priority: .userInitiated) {
+                try PhotoIndexStore(projectId: projectId)
+            }.value
+            guard !Task.isCancelled else { return }
+            index = store
+        } catch {
+            activity.errorMessage = error.localizedDescription
         }
+    }
+
+    private func ensureIndexReady() async throws {
+        if index != nil { return }
+        if let openingIndexTask {
+            await openingIndexTask.value
+            if index != nil { return }
+        }
+        try await installIndexIfNeededThrowing(projectId: project.id)
+        guard index != nil else {
+            throw PhotoIndexError.openFailed("Could not open photo index.")
+        }
+    }
+
+    private func installIndexIfNeededThrowing(projectId: String) async throws {
+        guard index == nil else { return }
+        let store = try await Task.detached(priority: .userInitiated) {
+            try PhotoIndexStore(projectId: projectId)
+        }.value
+        index = store
     }
 
     func startIfNeeded() {
@@ -126,15 +179,15 @@ final class LibraryViewModel {
             guard !Task.isCancelled, current == generation else { return }
 
             do {
-                try ensureIndex()
+                try await ensureIndexReady()
             } catch {
                 activity.errorMessage = error.localizedDescription
                 return
             }
 
-            await refreshSidebarBuckets()
             await reloadVisiblePaths()
             await Task.yield()
+            await refreshSidebarBuckets()
 
             let sources = resolvedSources()
             guard !sources.isEmpty else { return }
@@ -318,13 +371,15 @@ final class LibraryViewModel {
             _ = try? securityScope.beginAccess(sourceID: sourceID, bookmarkData: data)
             activity.errorMessage = nil
             analysisStaleBannerSuppressed = false
-            do {
-                try ensureIndex()
-            } catch {
-                activity.errorMessage = error.localizedDescription
+            Task {
+                do {
+                    try await ensureIndexReady()
+                } catch {
+                    activity.errorMessage = error.localizedDescription
+                }
+                await refreshAnalysisStaleHint()
+                startIfNeeded()
             }
-            Task { await refreshAnalysisStaleHint() }
-            startIfNeeded()
         } catch {
             activity.errorMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
@@ -582,7 +637,7 @@ final class LibraryViewModel {
         }
         do {
             var paths = try await visiblePathQuery(store: store)
-            paths = filterPathsBySelectedMediaTypes(paths)
+            paths = await filterPathsBySelectedMediaTypes(paths)
             visiblePaths = paths
             appliedVisiblePathsQueryFingerprint = fingerprint
         } catch {
@@ -626,13 +681,22 @@ final class LibraryViewModel {
         }
     }
 
-    private func filterPathsBySelectedMediaTypes(_ paths: [String]) -> [String] {
+    private func filterPathsBySelectedMediaTypes(_ paths: [String]) async -> [String] {
         guard isMediaTypeFilterActive else { return paths }
         guard !selectedMediaExtensions.isEmpty else { return [] }
-        return paths.filter { path in
-            let ext = (path as NSString).pathExtension.lowercased()
-            return selectedMediaExtensions.contains(ext)
+        let allowed = selectedMediaExtensions
+        guard paths.count > 512 else {
+            return paths.filter { path in
+                let ext = (path as NSString).pathExtension.lowercased()
+                return allowed.contains(ext)
+            }
         }
+        return await Task.detached {
+            paths.filter { path in
+                let ext = (path as NSString).pathExtension.lowercased()
+                return allowed.contains(ext)
+            }
+        }.value
     }
 
     private func visiblePathQuery(store: PhotoIndexStore) async throws -> [String] {

@@ -121,6 +121,14 @@ Expected: tag matches `v${VERSION}`, assets include `Photo-Viewer-*-mac.zip`.
 
 Updates replace the **bundle path** of the running app; testing from Xcode output paths is less representative than `/Applications`.
 
+## Version bump
+
+```bash
+./scripts/bump-version.sh patch   # or minor | major
+```
+
+Increments `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in `project.yml` and runs `xcodegen generate`.
+
 ## Automated script
 
 ```bash

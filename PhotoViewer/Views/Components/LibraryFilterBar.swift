@@ -14,7 +14,7 @@ struct LibraryFilterBar: View {
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(alignment: .center, spacing: 8) {
             Label("Date range", systemImage: "calendar")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -30,7 +30,6 @@ struct LibraryFilterBar: View {
             Image(systemName: "arrow.right")
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.tertiary)
-                .padding(.top, 18)
 
             DateBoundField(
                 title: "To",
@@ -49,7 +48,7 @@ struct LibraryFilterBar: View {
             }
         }
         .padding(.horizontal, embedded ? 0 : 12)
-        .padding(.vertical, embedded ? 0 : 6)
+        .padding(.vertical, embedded ? 4 : 6)
         .background {
             if !embedded {
                 Color(nsColor: .underPageBackgroundColor).opacity(0.35)
@@ -147,7 +146,7 @@ private struct DateBoundField: View {
     }()
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 6) {
             Toggle(isOn: $enabled) {
                 Text(title)
                     .font(.caption.weight(.semibold))
@@ -155,14 +154,11 @@ private struct DateBoundField: View {
             }
             .toggleStyle(.checkbox)
             .controlSize(.small)
-            .padding(.leading, 1)
 
             datePicker
-                .padding(.leading, 18)
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(width: 156, alignment: .leading)
+        .padding(.vertical, 4)
         .background {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(

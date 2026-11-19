@@ -6,31 +6,31 @@ struct ContentView: View {
     @State private var libraryModels: [String: LibraryViewModel] = [:]
 
     var body: some View {
-        NavigationSplitView {
-            ProjectListView(
-                model: projects,
-                selectedProjectId: $selectedProjectId
-            )
-            .navigationSplitViewColumnWidth(min: 220, ideal: 260)
-        } detail: {
-            Group {
-                if let id = selectedProjectId,
-                   let project = projects.projects.first(where: { $0.id == id }) {
-                    LibraryView(
-                        model: libraryModel(for: project),
-                        onBackToProjects: { selectedProjectId = nil }
+        Group {
+            if let id = selectedProjectId,
+               let project = projects.projects.first(where: { $0.id == id }) {
+                LibraryView(
+                    model: libraryModel(for: project),
+                    onBackToProjects: { selectedProjectId = nil }
+                )
+                .id(id)
+            } else {
+                NavigationSplitView {
+                    ProjectListView(
+                        model: projects,
+                        selectedProjectId: $selectedProjectId
                     )
-                    .id(id)
-                } else {
+                    .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 280)
+                } detail: {
                     ProjectOnboardingView {
                         selectedProjectId = projects.create(name: "My Photos")?.id
                     }
                 }
+                .navigationSplitViewStyle(.prominentDetail)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 1080, minHeight: 640)
+        .frame(minWidth: 720, minHeight: 480)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
             projects.load()
             openLastProjectIfNeeded()
@@ -40,16 +40,22 @@ struct ContentView: View {
             if let oldValue, oldValue != newValue {
                 libraryModels[oldValue]?.close()
             }
+            if let newValue,
+               let project = projects.projects.first(where: { $0.id == newValue }) {
+                libraryModel(for: project).prepareForOpening()
+            }
         }
     }
 
     private func libraryModel(for project: LibraryProject) -> LibraryViewModel {
         if let cached = libraryModels[project.id] {
             cached.project = project
+            cached.prepareForOpening()
             return cached
         }
         let model = LibraryViewModel(project: project, projects: projects)
         libraryModels[project.id] = model
+        model.prepareForOpening()
         return model
     }
 

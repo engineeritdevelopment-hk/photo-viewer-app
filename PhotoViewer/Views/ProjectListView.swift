@@ -28,9 +28,6 @@ struct ProjectListView: View {
             }
         }
         .listStyle(.sidebar)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            AppInfoSidebarHeader()
-        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let error = model.errorMessage {
                 VStack(alignment: .leading, spacing: 6) {
