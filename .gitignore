@@ -1,5 +1,5 @@
-# Xcode
-build/xcode/
+# Xcode & local builds
+build/
 DerivedData/
 *.xcuserstate
 PhotoViewer.xcodeproj/xcuserdata/
