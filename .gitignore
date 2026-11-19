@@ -1,0 +1,19 @@
+# Xcode
+build/xcode/
+DerivedData/
+*.xcuserstate
+PhotoViewer.xcodeproj/xcuserdata/
+
+# Legacy Flutter (removed)
+.dart_tool/
+.pub-cache/
+
+# macOS
+.DS_Store
+
+# JetBrains / legacy IDE
+.idea/
+
+# Cursor hooks (local rebuild log)
+.cursor/hooks/rebuild.log
+.cursor/hooks/.rebuild-trigger

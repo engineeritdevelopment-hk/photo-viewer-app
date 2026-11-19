@@ -1,0 +1,1 @@
+@rpath/photo_viewer.debug.dylib

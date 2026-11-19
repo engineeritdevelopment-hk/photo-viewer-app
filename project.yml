@@ -1,0 +1,55 @@
+name: PhotoViewer
+options:
+  bundleIdPrefix: com.photoviewer
+  deploymentTarget:
+    macOS: "15.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MACOSX_DEPLOYMENT_TARGET: "15.0"
+targets:
+  PhotoViewer:
+    type: application
+    platform: macOS
+    sources:
+      - path: PhotoViewer
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.photoviewer.app
+        PRODUCT_NAME: Photo Viewer
+        CODE_SIGN_ENTITLEMENTS: PhotoViewer/PhotoViewer.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        ENABLE_TESTABILITY: YES
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.photography
+    entitlements:
+      path: PhotoViewer/PhotoViewer.entitlements
+      properties:
+        com.apple.security.app-sandbox: true
+        com.apple.security.files.user-selected.read-write: true
+        com.apple.security.files.bookmarks.app-scope: true
+  PhotoViewerTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: PhotoViewerTests
+    dependencies:
+      - target: PhotoViewer
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.photoviewer.app.tests
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Photo Viewer.app/Contents/MacOS/Photo Viewer"
+schemes:
+  PhotoViewer:
+    build:
+      targets:
+        PhotoViewer: all
+        PhotoViewerTests: [test]
+    test:
+      targets:
+        - PhotoViewerTests
+      gatherCoverageData: false
