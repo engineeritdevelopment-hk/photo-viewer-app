@@ -131,8 +131,10 @@ struct LibraryView: View {
             Section {
                 Button(action: onBackToProjects) {
                     Label("Projects", systemImage: "chevron.left")
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
+                .sidebarListRowInsets()
             }
 
             Section("Filter") {
@@ -387,31 +389,28 @@ struct LibraryView: View {
     }
 
     private var albumsSectionHeader: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             Text("Albums")
             Spacer(minLength: 4)
             if model.selectedAlbumId != nil {
                 Button("All") {
                     model.clearAlbumFilter()
                 }
-                .controlSize(.mini)
+                .controlSize(.small)
                 .buttonStyle(.borderless)
             }
-            Button {
+            SidebarSectionIconButton(
+                systemImage: isEditingAlbums ? "checkmark.circle" : "pencil",
+                isEmphasized: isEditingAlbums,
+                help: isEditingAlbums ? "Done editing albums" : "Edit albums"
+            ) {
                 isEditingAlbums.toggle()
-            } label: {
-                Image(systemName: isEditingAlbums ? "checkmark.circle" : "pencil")
             }
-            .buttonStyle(.borderless)
-            .help(isEditingAlbums ? "Done editing albums" : "Edit albums")
-            Button {
+            SidebarSectionIconButton(systemImage: "plus", help: "New album") {
                 showNewAlbumPrompt = true
-            } label: {
-                Image(systemName: "plus")
             }
-            .buttonStyle(.borderless)
-            .help("New album")
         }
+        .sidebarSectionHeaderActionsLayout()
         .textCase(nil)
     }
 
@@ -477,13 +476,13 @@ struct LibraryView: View {
                     titleForeground: isSelected ? .accentColor : .primary
                 )
                 if isEditingAlbums, !album.isFavorites {
-                    Button(role: .destructive) {
+                    SidebarSectionIconButton(
+                        systemImage: "trash",
+                        role: .destructive,
+                        help: "Delete album"
+                    ) {
                         model.deleteAlbum(id: album.id)
-                    } label: {
-                        Image(systemName: "trash")
                     }
-                    .buttonStyle(.borderless)
-                    .help("Delete album")
                 }
             }
         }
@@ -506,24 +505,21 @@ struct LibraryView: View {
     }
 
     private var sourcesSectionHeader: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             Text("Sources")
             Spacer(minLength: 4)
-            Button {
+            SidebarSectionIconButton(
+                systemImage: isEditingSources ? "checkmark.circle" : "pencil",
+                isEmphasized: isEditingSources,
+                help: isEditingSources ? "Done editing sources" : "Edit sources"
+            ) {
                 isEditingSources.toggle()
-            } label: {
-                Image(systemName: isEditingSources ? "checkmark.circle" : "pencil")
             }
-            .buttonStyle(.borderless)
-            .help(isEditingSources ? "Done editing sources" : "Edit sources")
-            Button {
+            SidebarSectionIconButton(systemImage: "plus", help: "Add source folder…") {
                 model.addSourceFolder()
-            } label: {
-                Image(systemName: "plus")
             }
-            .buttonStyle(.borderless)
-            .help("Add source folder…")
         }
+        .sidebarSectionHeaderActionsLayout()
         .textCase(nil)
         .help("Add, remove, or edit indexed folders. Use Filter → Sources to narrow the grid.")
     }
@@ -542,11 +538,12 @@ struct LibraryView: View {
                 titleForeground: .secondary
             )
             if showsDelete {
-                Button(role: .destructive, action: onDelete) {
-                    Image(systemName: "trash")
-                }
-                .buttonStyle(.borderless)
-                .help("Remove source")
+                SidebarSectionIconButton(
+                    systemImage: "trash",
+                    role: .destructive,
+                    help: "Remove source",
+                    action: onDelete
+                )
             }
         }
         .sidebarPlaceholderRowStyle()

@@ -1,12 +1,12 @@
 import SwiftUI
 
 enum SidebarListMetrics {
-    static let rowInsets = EdgeInsets(top: 1, leading: 8, bottom: 1, trailing: 8)
-    static let compactRowInsets = EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8)
-    static let iconWidth: CGFloat = 18
-    static let rowHorizontalPadding: CGFloat = 8
-    static let rowVerticalPadding: CGFloat = 4
-    static let compactRowHorizontalPadding: CGFloat = 6
+    static let rowInsets = EdgeInsets(top: 1, leading: 2, bottom: 1, trailing: 6)
+    static let compactRowInsets = EdgeInsets(top: 0, leading: 2, bottom: 0, trailing: 6)
+    static let iconWidth: CGFloat = 16
+    static let rowHorizontalPadding: CGFloat = 5
+    static let rowVerticalPadding: CGFloat = 3
+    static let compactRowHorizontalPadding: CGFloat = 4
     static let compactRowVerticalPadding: CGFloat = 2
 }
 

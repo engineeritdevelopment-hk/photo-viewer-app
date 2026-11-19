@@ -7,7 +7,9 @@ struct LibraryHeaderBar: View {
     @State private var showFilenameRules = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 10) {
+            AppInfoButton()
+
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.project.name)
                     .font(.headline)

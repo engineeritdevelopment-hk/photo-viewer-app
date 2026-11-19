@@ -42,11 +42,13 @@
 		7A3BF0EF7EC0FCF9BA5E9FC0 /* PhotoDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42ECEE3762E55427FA78F75A /* PhotoDetailView.swift */; };
 		7A4B5383B763E93DBC8F34C9 /* MetadataReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D35AF8FAFD5E89A6CD9BB1D /* MetadataReader.swift */; };
 		7D85E2DD785D063C25A53A64 /* LibraryFilterPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EF52001B926471D47DD0743 /* LibraryFilterPanel.swift */; };
+		7E48BA2C83D3FE85F91F167D /* SidebarSectionToolbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8699268F94ED3613067B686 /* SidebarSectionToolbar.swift */; };
 		7F950F031BA012C6AFCBD67F /* AppPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C594C15D6DD8E4315731A120 /* AppPreferencesTests.swift */; };
 		8A4361AE7621E04AF911380B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 179BF5626039EC2F9484CC47 /* Assets.xcassets */; };
 		8ACD5B2907F1BB5AADAE75CC /* LibraryViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4447E72FED1AFC4553D14412 /* LibraryViewModelTests.swift */; };
 		8DA32EE19ABE13A934821A8A /* ActivityBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DE73EB8D68FDF1DA06D68BD /* ActivityBanner.swift */; };
 		9425E63E91CCAA5368CFABBB /* PhotoLocationMapSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 603E83777310321CEAAFFFF0 /* PhotoLocationMapSheet.swift */; };
+		9B79DABD7829B1D938224363 /* AppInfoButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9EB871920AF5615D519FF423 /* AppInfoButton.swift */; };
 		A17249396E9959DBB2926EB5 /* LibraryAnalysisStaleBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AB73A96E07914C40989AC3F /* LibraryAnalysisStaleBanner.swift */; };
 		A28AC8F10A900AA56DB365C9 /* ReleaseUpdateChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D78D4E0407E458E2C4D1D5 /* ReleaseUpdateChecker.swift */; };
 		A2ACFAC1A3A8CBBD3B5C6C0C /* AppUpdateAlertsModifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52AE39C8FF101A431A0E7D1E /* AppUpdateAlertsModifier.swift */; };
@@ -163,6 +165,7 @@
 		92BF182362EF8DEE089C37BB /* LibraryPeopleBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryPeopleBar.swift; sourceTree = "<group>"; };
 		969C811760923041D2FFDD90 /* ProjectsViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProjectsViewModelTests.swift; sourceTree = "<group>"; };
 		97AEF298E548D54DD355B735 /* FaceCropExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FaceCropExtractor.swift; sourceTree = "<group>"; };
+		9EB871920AF5615D519FF423 /* AppInfoButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppInfoButton.swift; sourceTree = "<group>"; };
 		9EBD735B0770DDA64D2DD6AF /* AnalysisPipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisPipeline.swift; sourceTree = "<group>"; };
 		A3EAFC521D67606C5DDBF979 /* TempDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TempDirectory.swift; sourceTree = "<group>"; };
 		A496EFC95DEF33D951C5C802 /* LibraryDeleteBinBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDeleteBinBar.swift; sourceTree = "<group>"; };
@@ -177,6 +180,7 @@
 		C594C15D6DD8E4315731A120 /* AppPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferencesTests.swift; sourceTree = "<group>"; };
 		CB5252D888875BA9E2C33FB8 /* PhotoViewerInstallHelper */ = {isa = PBXFileReference; includeInIndex = 0; path = PhotoViewerInstallHelper; sourceTree = BUILT_PRODUCTS_DIR; };
 		D4A3C12C933DCE83AE0E1100 /* PhotoIndexStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoIndexStore.swift; sourceTree = "<group>"; };
+		D8699268F94ED3613067B686 /* SidebarSectionToolbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarSectionToolbar.swift; sourceTree = "<group>"; };
 		DA2F306933F6DA616E28CFE7 /* LibraryFilterBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryFilterBar.swift; sourceTree = "<group>"; };
 		DA547EACEFDD70D492CB38A9 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		DD7EE7CF58A6E5BDB5CCB9AB /* AppUpdateModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdateModel.swift; sourceTree = "<group>"; };
@@ -247,6 +251,7 @@
 			isa = PBXGroup;
 			children = (
 				8DE73EB8D68FDF1DA06D68BD /* ActivityBanner.swift */,
+				9EB871920AF5615D519FF423 /* AppInfoButton.swift */,
 				52AE39C8FF101A431A0E7D1E /* AppUpdateAlertsModifier.swift */,
 				596FAED238182306AEA0912E /* AppUpdateSheet.swift */,
 				66C4B456B850C8D4AEE5F710 /* LibraryActiveFilterBar.swift */,
@@ -269,6 +274,7 @@
 				835D86938DA0A3B180803A09 /* PointerActivityTracker.swift */,
 				8FBCA9289A2A225E7864CE47 /* ScrollWheelHandler.swift */,
 				F6ADC04BE670223A5C924502 /* SidebarListRowStyle.swift */,
+				D8699268F94ED3613067B686 /* SidebarSectionToolbar.swift */,
 				1DF39FDBFF07A8A14EFEA93C /* ThumbnailCell.swift */,
 			);
 			path = Components;
@@ -493,6 +499,7 @@
 				3AB46D0AC7AC1219E1B9B98E /* AlbumExportService.swift in Sources */,
 				FC0455D9EB03E9ED96A56B1F /* AnalysisPipeline.swift in Sources */,
 				5A9822141C6CA83DC9FD01B2 /* AnalysisSource.swift in Sources */,
+				9B79DABD7829B1D938224363 /* AppInfoButton.swift in Sources */,
 				CEA8563B2C346248FA6AFE0A /* AppPreferences.swift in Sources */,
 				A2ACFAC1A3A8CBBD3B5C6C0C /* AppUpdateAlertsModifier.swift in Sources */,
 				6C87C4EDCA7DF634A2720DE1 /* AppUpdateDownloader.swift in Sources */,
@@ -546,6 +553,7 @@
 				CA43509ED18A4136109869EA /* ScrollWheelHandler.swift in Sources */,
 				D9E5223E85E1AF0EDF976941 /* SecurityScopeManager.swift in Sources */,
 				5A7FE4572DF445B01BF5AF21 /* SidebarListRowStyle.swift in Sources */,
+				7E48BA2C83D3FE85F91F167D /* SidebarSectionToolbar.swift in Sources */,
 				5E7FA06F7DFBD984CFE57CF4 /* SmartAnalyzer.swift in Sources */,
 				F633F4E159F23C9264C4ACF3 /* SourceFileDeletionService.swift in Sources */,
 				3BB7459F3169246DFD674B3D /* ThumbnailCell.swift in Sources */,

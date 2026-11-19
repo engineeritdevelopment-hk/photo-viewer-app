@@ -28,6 +28,19 @@ struct ProjectListView: View {
             }
         }
         .listStyle(.sidebar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            HStack(alignment: .center, spacing: 8) {
+                AppInfoButton()
+                Text("Photo Viewer")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 8)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .overlay(alignment: .bottom) { Divider() }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let error = model.errorMessage {
                 VStack(alignment: .leading, spacing: 6) {
@@ -53,24 +66,21 @@ struct ProjectListView: View {
     }
 
     private var projectsSectionHeader: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             Text("Projects")
             Spacer(minLength: 4)
-            Button {
+            SidebarSectionIconButton(
+                systemImage: isEditingProjects ? "checkmark.circle" : "pencil",
+                isEmphasized: isEditingProjects,
+                help: isEditingProjects ? "Done editing projects" : "Edit projects"
+            ) {
                 isEditingProjects.toggle()
-            } label: {
-                Image(systemName: isEditingProjects ? "checkmark.circle" : "pencil")
             }
-            .buttonStyle(.borderless)
-            .help(isEditingProjects ? "Done editing projects" : "Edit projects")
-            Button {
+            SidebarSectionIconButton(systemImage: "plus", help: "New project") {
                 addProject()
-            } label: {
-                Image(systemName: "plus")
             }
-            .buttonStyle(.borderless)
-            .help("New project")
         }
+        .sidebarSectionHeaderActionsLayout()
         .textCase(nil)
     }
 
@@ -111,15 +121,16 @@ struct ProjectListView: View {
             }
 
             if isEditingProjects, editingProjectId != project.id {
-                Button(role: .destructive) {
+                SidebarSectionIconButton(
+                    systemImage: "trash",
+                    role: .destructive,
+                    help: "Delete project"
+                ) {
                     deleteProjects(ids: [project.id])
-                } label: {
-                    Image(systemName: "trash")
                 }
-                .buttonStyle(.borderless)
-                .help("Delete project")
             }
         }
+        .sidebarListRowInsets()
         .contextMenu {
             Button("Rename") {
                 beginRename(project)
