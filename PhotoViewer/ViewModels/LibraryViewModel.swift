@@ -64,8 +64,11 @@ final class LibraryViewModel {
     }
 
     func onAppear() {
-        normalizeFavoritesAlbum()
-        startIfNeeded()
+        Task {
+            await Task.yield()
+            normalizeFavoritesAlbum()
+            startIfNeeded()
+        }
     }
 
     /// Ensures the Favorites album uses `AlbumKind.favorites` (legacy projects used `.manual`).
@@ -116,7 +119,7 @@ final class LibraryViewModel {
         let priorCatalog = catalogTask
         priorCatalog?.cancel()
 
-        catalogTask = Task {
+        catalogTask = Task(priority: .userInitiated) {
             if let priorCatalog {
                 await priorCatalog.value
             }
@@ -129,18 +132,21 @@ final class LibraryViewModel {
                 return
             }
 
+            await refreshSidebarBuckets()
+            await reloadVisiblePaths()
+            await Task.yield()
+
+            let sources = resolvedSources()
+            guard !sources.isEmpty else { return }
+
+            guard let store = index else { return }
+
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled, current == generation else { return }
+
             activity.isCataloging = true
             activity.catalogScanned = 0
             activity.catalogTotal = nil
-            visiblePaths = []
-
-            let sources = resolvedSources()
-            guard !sources.isEmpty else {
-                activity.isCataloging = false
-                return
-            }
-
-            guard let store = index else { return }
             let stream = await catalog.scan(sources: sources, filter: project.filter, index: store)
             var lastGridRefresh = Date.distantPast
             for await progress in stream {

@@ -3,38 +3,54 @@ import SwiftUI
 struct ContentView: View {
     @State private var projects = ProjectsViewModel()
     @State private var selectedProjectId: String?
+    @State private var libraryModels: [String: LibraryViewModel] = [:]
 
     var body: some View {
-        Group {
-            if let id = selectedProjectId,
-               let project = projects.projects.first(where: { $0.id == id }) {
-                LibraryView(
-                    model: LibraryViewModel(project: project, projects: projects),
-                    onBackToProjects: { selectedProjectId = nil }
-                )
-            } else {
-                NavigationSplitView {
-                    ProjectListView(
-                        model: projects,
-                        selectedProjectId: $selectedProjectId
+        NavigationSplitView {
+            ProjectListView(
+                model: projects,
+                selectedProjectId: $selectedProjectId
+            )
+            .navigationSplitViewColumnWidth(min: 220, ideal: 260)
+        } detail: {
+            Group {
+                if let id = selectedProjectId,
+                   let project = projects.projects.first(where: { $0.id == id }) {
+                    LibraryView(
+                        model: libraryModel(for: project),
+                        onBackToProjects: { selectedProjectId = nil }
                     )
-                    .navigationSplitViewColumnWidth(min: 220, ideal: 260)
-                } detail: {
+                    .id(id)
+                } else {
                     ProjectOnboardingView {
                         selectedProjectId = projects.create(name: "My Photos")?.id
                     }
                 }
-                .navigationSplitViewStyle(.prominentDetail)
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 1080, minHeight: 640)
         .onAppear {
             projects.load()
             openLastProjectIfNeeded()
         }
-        .onChange(of: selectedProjectId) { _, newValue in
+        .onChange(of: selectedProjectId) { oldValue, newValue in
             AppPreferences.lastOpenedProjectId = newValue
+            if let oldValue, oldValue != newValue {
+                libraryModels[oldValue]?.close()
+            }
         }
+    }
+
+    private func libraryModel(for project: LibraryProject) -> LibraryViewModel {
+        if let cached = libraryModels[project.id] {
+            cached.project = project
+            return cached
+        }
+        let model = LibraryViewModel(project: project, projects: projects)
+        libraryModels[project.id] = model
+        return model
     }
 
     private func openLastProjectIfNeeded() {

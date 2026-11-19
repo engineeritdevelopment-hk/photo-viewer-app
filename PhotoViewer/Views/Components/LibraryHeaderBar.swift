@@ -8,7 +8,7 @@ struct LibraryHeaderBar: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
-            AppInfoButton()
+            AppInfoButton(style: .prominent)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(model.project.name)

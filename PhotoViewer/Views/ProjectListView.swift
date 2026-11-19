@@ -29,17 +29,7 @@ struct ProjectListView: View {
         }
         .listStyle(.sidebar)
         .safeAreaInset(edge: .top, spacing: 0) {
-            HStack(alignment: .center, spacing: 8) {
-                AppInfoButton()
-                Text("Photo Viewer")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 8)
-            .background(Color(nsColor: .windowBackgroundColor))
-            .overlay(alignment: .bottom) { Divider() }
+            AppInfoSidebarHeader()
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if let error = model.errorMessage {

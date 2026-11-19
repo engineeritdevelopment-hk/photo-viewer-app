@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LibraryView: View {
-    @State var model: LibraryViewModel
+    @Bindable var model: LibraryViewModel
     var onBackToProjects: () -> Void
     @State private var excludedNames = ""
     @State private var selectedPhoto: String?
@@ -249,6 +249,9 @@ struct LibraryView: View {
             }
         }
         .listStyle(.sidebar)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            AppInfoSidebarHeader()
+        }
         .onChange(of: model.selectedSidebarKey) { _, newValue in
             model.applySidebarKey(newValue)
             revealFilterSidebarSelection(newValue)
