@@ -17,6 +17,12 @@ SwiftUI app for browsing photos from multiple user-selected folders (including e
 - macOS 15+
 - Xcode 26+ (for building)
 
+## Updates
+
+The app compares **`CFBundleShortVersionString`** (see `MARKETING_VERSION` in `project.yml`) to the latest [GitHub release](https://docs.github.com/en/rest/releases/releases#get-the-latest-release) tag on `PhotoViewerGitHubRepository` (default `engineeritdevelopment-hk/photo-viewer-app`). On launch (at most once per day) and via **Photo Viewer → Check for Updates…** (⇧⌘U), it prompts when a newer tag is published and opens the release page for download.
+
+Tag releases as `v1.0.1` (or `1.0.1`); drafts and prereleases are ignored.
+
 ## Build and run
 
 ```bash

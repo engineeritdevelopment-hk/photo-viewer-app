@@ -4,6 +4,8 @@ enum AppPreferences {
     private static let lastOpenedProjectIdKey = "lastOpenedProjectId"
     static let showPeopleBarKey = "showPeopleBar"
     static let photoSortKey = "photoSort"
+    private static let lastUpdateCheckKey = "lastAutomaticUpdateCheckDate"
+    private static let dismissedUpdateVersionKey = "dismissedUpdateVersionLabel"
 
     static var showPeopleBar: Bool {
         get {
@@ -22,5 +24,24 @@ enum AppPreferences {
                 UserDefaults.standard.removeObject(forKey: lastOpenedProjectIdKey)
             }
         }
+    }
+
+    static func shouldRunAutomaticUpdateCheck() -> Bool {
+        guard let last = UserDefaults.standard.object(forKey: lastUpdateCheckKey) as? Date else {
+            return true
+        }
+        return Date().timeIntervalSince(last) >= UpdateConfiguration.automaticCheckInterval
+    }
+
+    static func recordAutomaticUpdateCheck() {
+        UserDefaults.standard.set(Date(), forKey: lastUpdateCheckKey)
+    }
+
+    static func isUpdateDismissed(label: String) -> Bool {
+        UserDefaults.standard.string(forKey: dismissedUpdateVersionKey) == label
+    }
+
+    static func dismissUpdate(label: String) {
+        UserDefaults.standard.set(label, forKey: dismissedUpdateVersionKey)
     }
 }
