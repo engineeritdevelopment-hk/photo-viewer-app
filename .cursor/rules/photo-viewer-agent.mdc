@@ -1,0 +1,23 @@
+---
+description: Photo Viewer repo map, guardrails, and deploy/update SOP pointers
+alwaysApply: true
+---
+
+# Photo Viewer — agent defaults
+
+Read **`AGENTS.md`** at the repo root for project map, guardrails, and doc index.
+
+## Deploy and updates
+
+When the user asks to **release**, **publish**, **ship**, **bump version**, **deploy**, or **verify updates**:
+
+1. Follow **`docs/DEPLOY_AND_UPDATES.md`** end-to-end (do not skip API verification).
+2. Prefer **`./scripts/release.sh`** after bumping `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` in **`project.yml`**, then `xcodegen generate`.
+3. GitHub releases go to **`engineeritdevelopment-hk/photo-viewer-app`** (public). Use `gh` as that account.
+4. Every release must upload **`Photo-Viewer-<version>-mac.zip`** containing **`Photo Viewer.app`**.
+5. In-app update code lives under **`PhotoViewer/Services/Update/`**; repo slug is **`INFOPLIST_KEY_PhotoViewerGitHubRepository`** in `project.yml`.
+
+## Build
+
+- XcodeGen: edit `project.yml` → `xcodegen generate` → `xcodebuild`.
+- Never commit **`build/`** or user data under `~/Library/Application Support/photo_viewer/`.

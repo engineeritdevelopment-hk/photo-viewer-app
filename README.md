@@ -19,22 +19,9 @@ SwiftUI app for browsing photos from multiple user-selected folders (including e
 
 ## Updates
 
-The app compares **`CFBundleShortVersionString`** (see `MARKETING_VERSION` in `project.yml`) to the latest [GitHub release](https://docs.github.com/en/rest/releases/releases#get-the-latest-release) tag on `PhotoViewerGitHubRepository` (default `engineeritdevelopment-hk/photo-viewer-app`). On launch (at most once per day) and via **Photo Viewer → Check for Updates…** (⇧⌘U), it prompts when a newer tag is published and opens the release page for download.
+In-app updates use the **public** repo **`engineeritdevelopment-hk/photo-viewer-app`**: on launch, daily while open, and via **Check for Updates…** (⇧⌘U) or the **info** popover.
 
-Tag releases as `v1.0.1` (or `1.0.1`); drafts and prereleases are ignored.
-
-### In-app install
-
-Each release should attach a **`.zip`** containing **`Photo Viewer.app`** at any depth in the archive (for example `Photo-Viewer-1.0.1-mac.zip`). When the user clicks **Update**, the app downloads that asset, quits, replaces itself via `PhotoViewerInstallHelper`, and relaunches.
-
-Build a release zip from a signed Release build:
-
-```bash
-cd build/xcode/Build/Products/Release
-ditto -c -k --sequesterRsrc --keepParent "Photo Viewer.app" "Photo-Viewer-$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "Photo Viewer.app/Contents/Info.plist")-mac.zip"
-```
-
-Upload that zip to the GitHub release assets when publishing.
+**Maintainers:** full checklist — [`docs/DEPLOY_AND_UPDATES.md`](docs/DEPLOY_AND_UPDATES.md). Quick path: bump versions in `project.yml`, then `./scripts/release.sh`. Agent context: [`AGENTS.md`](AGENTS.md).
 
 ## Build and run
 
