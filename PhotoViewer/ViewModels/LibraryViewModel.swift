@@ -32,6 +32,11 @@ final class LibraryViewModel {
     var sidebarPlaces: [(name: String, count: Int)] = []
     var sidebarCameras: [(name: String, count: Int)] = []
     var sidebarScreenshotCount = 0
+    /// Child folders under sources that contain photos. Empty until the index is loaded.
+    var sourceFolders: [SourceFolderNode] = []
+    /// A source contains photos in more than one directory, so folder browsing is useful.
+    var canBrowseSourceByFolder = false
+    var sourceFolderView: SourceFolderView = AppPreferences.sourceFolderView
     /// Bounds for date filter placeholders (full indexed library).
     var indexedDateEarliest: Date?
     var indexedDateLatest: Date?
@@ -176,6 +181,7 @@ final class LibraryViewModel {
             if let priorCatalog {
                 await priorCatalog.value
             }
+            await catalog.cancelAndWait()
             guard !Task.isCancelled, current == generation else { return }
 
             do {
@@ -240,6 +246,13 @@ final class LibraryViewModel {
         if let counts = try? await store.sidebarCounts() {
             sidebarScreenshotCount = counts.screenshots
         }
+        let folderCounts = (try? await store.directPhotoCountsByFolder()) ?? []
+        let roots = sourceRootPaths
+        sourceFolders = SourceFolderIndex.nodes(folderCounts: folderCounts, sourcePaths: roots)
+        canBrowseSourceByFolder = SourceFolderIndex.canBrowseByFolder(
+            folderCounts: folderCounts,
+            sourcePaths: roots
+        )
         await loadDetectedCategories()
         await refreshIndexedDateRange()
     }
@@ -297,6 +310,31 @@ final class LibraryViewModel {
         activity.isAnalyzing = false
         activity.isFaceProcessing = false
         activity.isGeocoding = false
+    }
+
+    var sourceRootPaths: [String] {
+        var paths = project.sourceBookmarks.map(\.displayPath)
+        for path in project.sources where !paths.contains(path) {
+            paths.append(path)
+        }
+        return paths.map(SourceFolderIndex.normalize)
+    }
+
+    func sourceFolders(under sourcePath: String) -> [SourceFolderNode] {
+        let root = SourceFolderIndex.normalize(sourcePath)
+        return sourceFolders.filter { $0.sourcePath == root }
+    }
+
+    /// Folder browsing is active only when this library actually has multiple folders.
+    var usesFolderBrowsing: Bool {
+        sourceFolderView == .byFolder && canBrowseSourceByFolder
+    }
+
+    func setSourceFolderView(_ view: SourceFolderView) {
+        guard sourceFolderView != view else { return }
+        sourceFolderView = view
+        AppPreferences.sourceFolderView = view
+        scheduleReloadVisiblePaths()
     }
 
     private func resolvedSources() -> [(id: String, url: URL)] {
@@ -358,15 +396,7 @@ final class LibraryViewModel {
         do {
             let data = try BookmarkStore.makeBookmark(for: url)
             let sourceID = UUID().uuidString
-            let bookmark = SourceBookmark(
-                id: sourceID,
-                displayPath: url.path,
-                bookmarkData: data
-            )
-            project.sourceBookmarks.append(bookmark)
-            if !project.sources.contains(url.path) {
-                project.sources.append(url.path)
-            }
+            registerSource(displayPath: url.path, bookmarkData: data, sourceID: sourceID)
             projects.update(project)
             _ = try? securityScope.beginAccess(sourceID: sourceID, bookmarkData: data)
             activity.errorMessage = nil
@@ -385,19 +415,27 @@ final class LibraryViewModel {
         }
     }
 
+    /// Records a chosen source folder. Used by the open panel and by tests.
+    func registerSource(displayPath: String, bookmarkData: Data, sourceID: String = UUID().uuidString) {
+        let bookmark = SourceBookmark(id: sourceID, displayPath: displayPath, bookmarkData: bookmarkData)
+        project.sourceBookmarks.append(bookmark)
+        if !project.sources.contains(displayPath) {
+            project.sources.append(displayPath)
+        }
+    }
+
     func removeSource(id: String) {
         securityScope.release(sourceID: id)
         let removedPath = project.sourceBookmarks.first(where: { $0.id == id })?.displayPath
         project.sourceBookmarks.removeAll { $0.id == id }
         if let removedPath {
             project.sources.removeAll { $0 == removedPath }
+            forgetPhotos(under: removedPath)
+        } else {
+            projects.update(project)
         }
-        projects.update(project)
         Task {
-            try? await index?.removeSource(id)
-            analysisStaleBannerSuppressed = false
-            await reloadVisiblePaths()
-            await refreshAnalysisStaleHint()
+            await dropIndexedSource(id: id, path: removedPath)
         }
     }
 
@@ -458,11 +496,56 @@ final class LibraryViewModel {
 
     func removeLegacySource(path: String) {
         project.sources.removeAll { $0 == path }
-        projects.update(project)
+        forgetPhotos(under: path)
         Task {
-            try? await index?.removePaths(withPathPrefix: path)
-            await reloadVisiblePaths()
+            await dropIndexedSource(id: path, path: path)
         }
+    }
+
+    /// Drops a removed folder from albums, the delete bin, and the current selection.
+    private func forgetPhotos(under prefix: String) {
+        func isUnder(_ path: String) -> Bool {
+            path == prefix || path.hasPrefix(prefix.hasSuffix("/") ? prefix : prefix + "/")
+        }
+        project.deleteBinPaths.removeAll(where: isUnder)
+        project.annotations.removeAll { isUnder($0.path) }
+        for index in project.albums.indices {
+            project.albums[index].memberPaths.removeAll(where: isUnder)
+        }
+        for index in project.personGroups.indices {
+            project.personGroups[index].memberPhotoPaths.removeAll(where: isUnder)
+            if project.personGroups[index].thumbnailPath.map(isUnder) == true {
+                project.personGroups[index].thumbnailPath = nil
+            }
+        }
+        selectedPaths = selectedPaths.filter { !isUnder($0) }
+        if selectedSidebarKey == "source:\(prefix)" {
+            selectedSidebarKey = nil
+        }
+        projects.update(project)
+        syncSelectionModeFromSelection()
+    }
+
+    /// Stops an in-flight catalog so it cannot write the folder back, then deletes its index rows.
+    private func dropIndexedSource(id: String, path: String?) async {
+        generation += 1
+        let priorCatalog = catalogTask
+        catalogTask = nil
+        priorCatalog?.cancel()
+        await catalog.cancelAndWait()
+        await priorCatalog?.value
+
+        if let store = index {
+            try? await store.removeSource(id)
+            if let path {
+                try? await store.removePaths(withPathPrefix: path)
+            }
+        }
+        analysisStaleBannerSuppressed = false
+        appliedVisiblePathsQueryFingerprint = nil
+        await reloadVisiblePaths()
+        await refreshSidebarBuckets()
+        await refreshAnalysisStaleHint()
     }
 
     var isMediaTypeFilterActive: Bool {
@@ -537,7 +620,20 @@ final class LibraryViewModel {
             case let key where key.hasPrefix("source:"):
                 let prefix = String(key.dropFirst("source:".count))
                 let short = (prefix as NSString).lastPathComponent
-                parts.append("Source: \(short)")
+                if usesFolderBrowsing {
+                    parts.append("Folder: \(short)")
+                } else {
+                    parts.append("Source: \(short)")
+                }
+            case let key where key.hasPrefix("folder:"):
+                let folder = String(key.dropFirst("folder:".count))
+                let relative = sourceFolders.first { $0.path == folder }?.relativePath
+                    ?? (folder as NSString).lastPathComponent
+                if usesFolderBrowsing {
+                    parts.append("Folder: \(relative)")
+                } else {
+                    parts.append("Folder: \(relative), with subfolders")
+                }
             default:
                 break
             }
@@ -662,6 +758,8 @@ final class LibraryViewModel {
             person,
             project.filter.excludedNameFragments.joined(separator: "|"),
             project.filter.excludedExtensions.joined(separator: "|"),
+            project.deleteBinPaths.joined(separator: "|"),
+            usesFolderBrowsing ? "folders" : "all",
         ].joined(separator: "\u{1e}")
     }
 
@@ -800,9 +898,16 @@ final class LibraryViewModel {
         }
         if key.hasPrefix("source:") {
             let prefix = String(key.dropFirst("source:".count))
+            if usesFolderBrowsing {
+                return Set(try await store.paths(inFolder: prefix, includeNested: false))
+            }
             return Set(try await store.pathsForSmartRules(SmartAlbumRules(conditions: [
                 SmartAlbumRule(type: .sourcePathPrefix, value: prefix),
             ])))
+        }
+        if key.hasPrefix("folder:") {
+            let folder = String(key.dropFirst("folder:".count))
+            return Set(try await store.paths(inFolder: folder, includeNested: !usesFolderBrowsing))
         }
         if key == "bin" {
             let bin = Set(project.deleteBinPaths)
@@ -998,8 +1103,10 @@ final class LibraryViewModel {
         }
         guard let index = project.albums.firstIndex(where: { $0.id == albumId }) else { return }
         guard project.albums[index].kind == .manual || project.albums[index].isFavorites else { return }
+        var seen = Set(project.albums[index].memberPaths)
         let unique = paths.filter { path in
-            !project.albums[index].memberPaths.contains(path)
+            guard seen.insert(path).inserted else { return false }
+            return true
         }
         guard !unique.isEmpty else { return }
         project.albums[index].memberPaths.append(contentsOf: unique)
@@ -1077,6 +1184,17 @@ final class LibraryViewModel {
         return album.id
     }
 
+    /// Photos that would be copied for this album, without asking for a destination folder.
+    func exportPhotoPaths(for album: Album) async -> [String] {
+        switch album.kind {
+        case .manual, .favorites:
+            return album.memberPaths
+        case .smart:
+            guard let store = index else { return [] }
+            return (try? await store.pathsForSmartRules(album.rules ?? SmartAlbumRules())) ?? []
+        }
+    }
+
     func exportSelectedAlbum() {
         guard let albumId = selectedAlbumId,
               let album = project.albums.first(where: { $0.id == albumId })
@@ -1086,14 +1204,7 @@ final class LibraryViewModel {
         }
 
         Task {
-            guard let store = index else { return }
-            let paths: [String]
-            switch album.kind {
-            case .manual, .favorites:
-                paths = album.memberPaths
-            case .smart:
-                paths = (try? await store.pathsForSmartRules(album.rules ?? SmartAlbumRules())) ?? []
-            }
+            let paths = await exportPhotoPaths(for: album)
 
             let panel = NSOpenPanel()
             panel.canChooseDirectories = true

@@ -40,4 +40,64 @@ final class PhotoCatalogScannerTests: XCTestCase {
         XCTAssertEqual(paths.count, 1)
         XCTAssertTrue(paths[0].hasSuffix("keep.jpg"))
     }
+
+    func testScanningOneFolderDoesNotRestorePhotosFromAnother() async throws {
+        let removed = tempRoot.appendingPathComponent("Camera/old.jpg")
+        try FileManager.default.createDirectory(
+            at: removed.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        let keptFolder = tempRoot.appendingPathComponent("Other", isDirectory: true)
+        try FileManager.default.createDirectory(at: keptFolder, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: keptFolder.appendingPathComponent("keep.jpg").path, contents: Data(count: 2))
+
+        let store = try PhotoIndexStore(databaseAt: tempRoot.appendingPathComponent("index.sqlite"))
+        try await store.upsertCatalogRow(path: removed.path, sourceId: "gone", modTime: Date(), fileSize: 1)
+        try await store.removePaths(withPathPrefix: removed.deletingLastPathComponent().path)
+
+        let stream = await PhotoCatalogScanner().scan(
+            sources: [("other", keptFolder)],
+            filter: PhotoFilter(),
+            index: store
+        )
+        for await _ in stream {}
+
+        let paths = try await store.allPaths()
+        XCTAssertEqual(paths, [keptFolder.appendingPathComponent("keep.jpg").path])
+    }
+
+    func testCancelledScanStopsBeforeWritingTheRestOfTheFolder() async throws {
+        let folder = tempRoot.appendingPathComponent("Camera", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for index in 0 ..< 40 {
+            FileManager.default.createFile(
+                atPath: folder.appendingPathComponent("img-\(index).jpg").path,
+                contents: Data([0xFF, 0xD8])
+            )
+        }
+
+        let store = try PhotoIndexStore(databaseAt: tempRoot.appendingPathComponent("cancel.sqlite"))
+        let hold = Task { await store.holdUntilCancelledForTesting() }
+        try await Task.sleep(for: .milliseconds(50))
+
+        let scanner = PhotoCatalogScanner()
+        let stream = await scanner.scan(sources: [("src", folder)], filter: PhotoFilter(), index: store, batchSize: 1)
+        let consumer = Task {
+            for await _ in stream {}
+        }
+
+        try await Task.sleep(for: .milliseconds(50))
+        let stop = Task { await scanner.cancelAndWait() }
+        try await Task.sleep(for: .milliseconds(50))
+        hold.cancel()
+        await hold.value
+        await stop.value
+        consumer.cancel()
+
+        let stoppedAt = try await store.allPaths().count
+        XCTAssertLessThan(stoppedAt, 40)
+        try await Task.sleep(for: .milliseconds(200))
+        let later = try await store.allPaths().count
+        XCTAssertEqual(later, stoppedAt)
+    }
 }

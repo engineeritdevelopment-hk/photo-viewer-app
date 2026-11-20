@@ -5,7 +5,11 @@ import Observation
 @Observable
 @MainActor
 final class AppUpdateModel {
-  private let checker = ReleaseUpdateChecker()
+  private let checker: ReleaseUpdateChecker
+
+  init(updateChecker: ReleaseUpdateChecker = ReleaseUpdateChecker()) {
+    checker = updateChecker
+  }
   private let downloader = AppUpdateDownloader()
 
   var isChecking = false

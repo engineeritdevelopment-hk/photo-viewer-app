@@ -21,6 +21,13 @@ actor PhotoIndexStore {
         if let db { sqlite3_close(db) }
     }
 
+    /// Blocks this store so an in-flight catalog upsert cannot run. Test-only.
+    func holdUntilCancelledForTesting() async {
+        while !Task.isCancelled {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+    }
+
     private func open(allowWALRecovery: Bool) throws {
         let parent = dbURL.deletingLastPathComponent()
         try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
@@ -359,6 +366,52 @@ actor PhotoIndexStore {
             record = Self.decodeRecord(stmt)
         }
         return record
+    }
+
+    /// Parent directory of each indexed photo, with the number of photos sitting directly in it.
+    func directPhotoCountsByFolder() throws -> [(folder: String, count: Int)] {
+        var counts: [String: Int] = [:]
+        try query("SELECT path FROM photos") { stmt in
+            guard let cString = sqlite3_column_text(stmt, 0) else { return }
+            let folder = (String(cString: cString) as NSString).deletingLastPathComponent
+            counts[folder, default: 0] += 1
+        }
+        return counts
+            .map { (folder: $0.key, count: $0.value) }
+            .sorted { $0.folder.localizedStandardCompare($1.folder) == .orderedAscending }
+    }
+
+    /// Photos in `folder`. Nested folders are included only when `includeNested` is true.
+    func paths(inFolder folder: String, includeNested: Bool) throws -> [String] {
+        let root = SourceFolderIndex.normalize(folder)
+        let prefix = root + "/"
+        let pattern = Self.sqlLikeLiteral(prefix) + "%"
+        var paths: [String] = []
+        try query(
+            "SELECT path FROM photos WHERE path LIKE ? ESCAPE '\\' ORDER BY path",
+            args: [.text(pattern)]
+        ) { stmt in
+            guard let cString = sqlite3_column_text(stmt, 0) else { return }
+            let path = String(cString: cString)
+            guard path.hasPrefix(prefix) else { return }
+            if !includeNested {
+                let remainder = path.dropFirst(prefix.count)
+                guard !remainder.contains("/") else { return }
+            }
+            paths.append(path)
+        }
+        return paths
+    }
+
+    private static func sqlLikeLiteral(_ value: String) -> String {
+        var literal = ""
+        for character in value {
+            if character == "%" || character == "_" || character == "\\" {
+                literal.append("\\")
+            }
+            literal.append(character)
+        }
+        return literal
     }
 
     func sidebarCounts() throws -> (screenshots: Int, withGPS: Int) {

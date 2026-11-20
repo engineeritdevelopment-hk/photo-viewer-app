@@ -44,6 +44,29 @@ final class PhotoIndexStoreTests: XCTestCase {
         XCTAssertEqual(paths, ["/Volumes/Other/x.jpg"])
     }
 
+    func testFolderQuerySeparatesNestedPhotos() async throws {
+        let store = try PhotoIndexStore(databaseAt: dbURL)
+        let mod = Date()
+        try await store.upsertCatalogRow(path: "/Volumes/DiskA/2024/screen.png", sourceId: "s", modTime: mod, fileSize: 1)
+        try await store.upsertCatalogRow(path: "/Volumes/DiskA/2024/trip/nested.jpg", sourceId: "s", modTime: mod, fileSize: 1)
+        try await store.upsertCatalogRow(path: "/Volumes/DiskA/2020/a.jpg", sourceId: "s", modTime: mod, fileSize: 1)
+        try await store.upsertCatalogRow(path: "/Volumes/Odd_Name/a_b/photo.jpg", sourceId: "s", modTime: mod, fileSize: 1)
+
+        let counts = try await store.directPhotoCountsByFolder()
+        XCTAssertEqual(counts.first { $0.folder == "/Volumes/DiskA/2024" }?.count, 1)
+        XCTAssertEqual(counts.first { $0.folder == "/Volumes/DiskA/2024/trip" }?.count, 1)
+
+        let direct = try await store.paths(inFolder: "/Volumes/DiskA/2024", includeNested: false)
+        XCTAssertEqual(direct, ["/Volumes/DiskA/2024/screen.png"])
+        let nested = try await store.paths(inFolder: "/Volumes/DiskA/2024", includeNested: true)
+        XCTAssertEqual(
+            Set(nested),
+            ["/Volumes/DiskA/2024/screen.png", "/Volumes/DiskA/2024/trip/nested.jpg"]
+        )
+        let underscore = try await store.paths(inFolder: "/Volumes/Odd_Name/a_b", includeNested: false)
+        XCTAssertEqual(underscore, ["/Volumes/Odd_Name/a_b/photo.jpg"])
+    }
+
     func testSequentialReopenSameDatabaseFile() async throws {
         do {
             let store = try PhotoIndexStore(databaseAt: dbURL)

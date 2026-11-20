@@ -55,4 +55,29 @@ final class ProjectsViewModelTests: XCTestCase {
         reloaded.load()
         XCTAssertEqual(reloaded.projects.map(\.name).sorted(), ["Persisted", "Second"])
     }
+
+    func testCreateRejectsBlankName() {
+        let vm = ProjectsViewModel()
+        XCTAssertNil(vm.create(name: "   "))
+        XCTAssertTrue(vm.projects.isEmpty)
+    }
+
+    func testCorruptProjectsFileIsBackedUpAndReported() throws {
+        let url = ApplicationPaths.projectsJSON
+        try Data("{not-json".utf8).write(to: url)
+        XCTAssertThrowsError(try ProjectStore.load()) { error in
+            XCTAssertTrue(error is ProjectStoreError)
+        }
+        let backup = url.deletingPathExtension().appendingPathExtension("json.bak")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.path))
+    }
+
+    func testPersistFailureSetsErrorMessage() throws {
+        let url = ApplicationPaths.projectsJSON
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        let vm = ProjectsViewModel()
+        vm.projects = [LibraryProject(id: "p1", name: "Blocked")]
+        vm.persist()
+        XCTAssertNotNil(vm.errorMessage)
+    }
 }

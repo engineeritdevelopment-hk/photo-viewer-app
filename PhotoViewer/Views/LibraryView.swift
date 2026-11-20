@@ -186,12 +186,16 @@ struct LibraryView: View {
                 }
                 if !filterSourcePaths.isEmpty {
                     DisclosureGroup(isExpanded: $filterSourcesExpanded) {
+                        if model.canBrowseSourceByFolder {
+                            sourceFolderViewPicker
+                        }
                         ForEach(model.project.sourceBookmarks) { source in
                             filterSidebarRow(
                                 filterSourceTitle(source.displayPath),
                                 systemImage: "externaldrive",
                                 key: "source:\(source.displayPath)"
                             )
+                            sourceFolderRows(under: source.displayPath)
                         }
                         ForEach(legacySources, id: \.self) { path in
                             filterSidebarRow(
@@ -199,6 +203,7 @@ struct LibraryView: View {
                                 systemImage: "folder",
                                 key: "source:\(path)"
                             )
+                            sourceFolderRows(under: path)
                         }
                     } label: {
                         sidebarFilterGroupLabel(
@@ -260,7 +265,7 @@ struct LibraryView: View {
         if key.hasPrefix("date:") { browseYearsExpanded = true }
         if key.hasPrefix("place:") { browsePlacesExpanded = true }
         if key.hasPrefix("camera:") { browseCamerasExpanded = true }
-        if key.hasPrefix("source:") { filterSourcesExpanded = true }
+        if key.hasPrefix("source:") || key.hasPrefix("folder:") { filterSourcesExpanded = true }
     }
 
     private var showsDeleteBinChrome: Bool {
@@ -556,6 +561,37 @@ struct LibraryView: View {
 
     private var filterSourcePaths: [String] {
         model.project.sourceBookmarks.map(\.displayPath) + legacySources
+    }
+
+    private var sourceFolderViewPicker: some View {
+        Picker("Source folders", selection: Binding(
+            get: { model.sourceFolderView },
+            set: { model.setSourceFolderView($0) }
+        )) {
+            ForEach(SourceFolderView.allCases, id: \.self) { mode in
+                Text(mode.title).tag(mode)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .controlSize(.small)
+        .help("All shows every photo in a source, including nested folders. By folder lists each folder and shows only the photos inside it.")
+        .accessibilityLabel("Source folder view")
+        .selectionDisabled(true)
+    }
+
+    @ViewBuilder
+    private func sourceFolderRows(under sourcePath: String) -> some View {
+        if model.usesFolderBrowsing {
+            ForEach(model.sourceFolders(under: sourcePath)) { folder in
+                filterSidebarRow(
+                    "\(folder.relativePath) (\(folder.count))",
+                    systemImage: "folder",
+                    key: "folder:\(folder.path)"
+                )
+                .padding(.leading, CGFloat(min(folder.depth, 4)) * 10)
+            }
+        }
     }
 
     private func filterSourceTitle(_ path: String) -> String {

@@ -377,16 +377,13 @@ struct PhotoDetailView: View {
     }
 
     private var positionLabel: String? {
-        guard let index = paths.firstIndex(of: path) else { return nil }
-        return "\(index + 1) of \(paths.count)"
+        ViewerNavigation.positionLabel(path: path, paths: paths)
     }
 
     private func step(by delta: Int) {
-        guard let index = paths.firstIndex(of: path) else { return }
-        let next = index + delta
-        guard paths.indices.contains(next) else { return }
+        guard let next = ViewerNavigation.steppedPath(from: path, in: paths, by: delta) else { return }
         persistAnnotation()
-        path = paths[next]
+        path = next
     }
 
     private func scrollNavigate(delta: CGFloat) {

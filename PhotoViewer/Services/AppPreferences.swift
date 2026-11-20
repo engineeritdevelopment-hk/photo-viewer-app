@@ -4,6 +4,18 @@ enum AppPreferences {
     private static let lastOpenedProjectIdKey = "lastOpenedProjectId"
     static let showPeopleBarKey = "showPeopleBar"
     static let photoSortKey = "photoSort"
+    static let sourceFolderViewKey = "sourceFolderView"
+
+    static var sourceFolderView: SourceFolderView {
+        get {
+            guard let raw = UserDefaults.standard.string(forKey: sourceFolderViewKey),
+                  let value = SourceFolderView(rawValue: raw) else {
+                return .allNested
+            }
+            return value
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: sourceFolderViewKey) }
+    }
     private static let lastUpdateCheckKey = "lastAutomaticUpdateCheckDate"
 
     static var showPeopleBar: Bool {
