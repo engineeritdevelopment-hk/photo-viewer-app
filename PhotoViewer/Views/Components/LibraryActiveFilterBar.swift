@@ -24,14 +24,7 @@ struct LibraryActiveFilterBar: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("Active filters: \(model.viewFilterSummary)")
 
-                if model.filteredPersonId != nil {
-                    Toggle(isOn: $model.highlightsFilteredFace) {
-                        Label("Highlight face", systemImage: "person.crop.rectangle")
-                    }
-                    .toggleStyle(.button)
-                    .controlSize(.small)
-                    .help("Keep a frame on this person's face while moving between photos")
-                }
+                HighlightFaceSwitch(model: model)
 
                 Button("Show all", action: onReset)
                     .controlSize(.small)
@@ -42,6 +35,40 @@ struct LibraryActiveFilterBar: View {
             .background(.regularMaterial)
             .overlay(alignment: .top) { Divider() }
             .shadow(color: .black.opacity(0.12), radius: 8, y: -2)
+        }
+    }
+}
+
+struct InterfaceBusyOverlay: View {
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.22)
+                .ignoresSafeArea()
+            ProgressView("Working…")
+                .controlSize(.large)
+                .padding(18)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .allowsHitTesting(true)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Working")
+        .accessibilityAddTraits(.updatesFrequently)
+    }
+}
+
+/// Switch that keeps a frame on the filtered person's face.
+struct HighlightFaceSwitch: View {
+    @Bindable var model: LibraryViewModel
+    var onDarkChrome: Bool = false
+
+    var body: some View {
+        if model.filteredPersonId != nil {
+            Toggle("Highlight face", isOn: $model.highlightsFilteredFace)
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .foregroundStyle(onDarkChrome ? Color.white.opacity(0.92) : Color.primary)
+                .tint(onDarkChrome ? Color.yellow : Color.accentColor)
+                .help("Keep a frame on this person's face while moving between photos")
         }
     }
 }

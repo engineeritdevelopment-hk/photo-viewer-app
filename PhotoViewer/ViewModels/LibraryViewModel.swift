@@ -22,6 +22,17 @@ final class LibraryViewModel {
     var categoryDetectionOn = false
     var objectDetectionOn = false
     var analyzeFacesOn = false
+
+    var allAnalysisOptionsOn: Bool {
+        categoryDetectionOn && objectDetectionOn && analyzeFacesOn
+    }
+
+    func setAllAnalysisOptions(_ on: Bool) {
+        guard !isAnalysisRunning else { return }
+        categoryDetectionOn = on
+        objectDetectionOn = on
+        analyzeFacesOn = on
+    }
     var isSelectingPhotos = false
     var selectedPaths: Set<String> = []
     var isCombiningPeople = false
@@ -324,6 +335,18 @@ final class LibraryViewModel {
             || activity.isFaceProcessing
             || activity.isSearchingFaces
             || activity.isGeocoding
+    }
+
+    private(set) var interfaceBusyCount = 0
+
+    var isInterfaceBusy: Bool { interfaceBusyCount > 0 }
+
+    /// Shows the working spinner, lets it draw, then runs the work.
+    func withInterfaceWork<T>(_ operation: () async -> T) async -> T {
+        interfaceBusyCount += 1
+        await Task.yield()
+        defer { interfaceBusyCount -= 1 }
+        return await operation()
     }
 
     var canStartAnalysis: Bool {
@@ -1703,36 +1726,58 @@ final class LibraryViewModel {
         guard highlightsFilteredFace, let personId = filteredPersonId,
               let person = project.personGroups.first(where: { $0.id == personId })
         else { return [] }
-        let faces = FaceAlignment.alignedFaces(from: URL(fileURLWithPath: path))
-        guard !faces.isEmpty else { return [] }
-        var embeddings: [UUID: FaceEmbedding] = [:]
-        for face in faces {
-            embeddings[face.id] = AdaFaceEmbedder.embedding(forAlignedFace: face.image)
+        let cached = personEmbeddingCache[person.id]
+        let referencePaths = referenceImagePaths(for: person)
+        let result = await Task.detached(priority: .userInitiated) {
+            let faces = FaceAlignment.alignedFaces(from: URL(fileURLWithPath: path))
+            let personEmbedding = cached ?? FacePhotoWork.embedding(forImagePaths: referencePaths)
+            guard !faces.isEmpty else { return (faces: [FaceAlignment.AlignedFace](), embedding: personEmbedding) }
+            var embeddings: [UUID: FaceEmbedding] = [:]
+            for face in faces {
+                embeddings[face.id] = AdaFaceEmbedder.embedding(forAlignedFace: face.image)
+            }
+            let matches = FaceNameMatcher.matchingFaceIDs(
+                faceIDs: faces.map(\.id),
+                faceEmbeddings: embeddings,
+                personEmbedding: personEmbedding
+            )
+            return (faces: faces.filter { matches.contains($0.id) }, embedding: personEmbedding)
+        }.value
+        if let embedding = result.embedding {
+            personEmbeddingCache[person.id] = embedding
         }
-        let matches = FaceNameMatcher.matchingFaceIDs(
-            faceIDs: faces.map(\.id),
-            faceEmbeddings: embeddings,
-            personEmbedding: embedding(forNamedPerson: person)
-        )
-        return faces.filter { matches.contains($0.id) }
+        return result.faces
     }
 
     /// Names to draw on faces in one photo. Includes people from the top row and the left filter.
     func faceLabels(for faces: [FaceAlignment.AlignedFace], path: String) async -> [UUID: String] {
         let people = await namedPeople(on: path)
         guard !faces.isEmpty, !people.isEmpty else { return [:] }
-        var faceEmbeddings: [UUID: FaceEmbedding] = [:]
-        for face in faces {
-            faceEmbeddings[face.id] = AdaFaceEmbedder.embedding(forAlignedFace: face.image)
-        }
         let described = people.map { person in
-            (name: person.name, embedding: embedding(forNamedPerson: person.group))
+            (
+                name: person.name,
+                embedding: personEmbeddingCache[person.group.id],
+                paths: referenceImagePaths(for: person.group)
+            )
         }
-        return FaceNameMatcher.labels(
-            faceIDs: faces.map(\.id),
-            faceEmbeddings: faceEmbeddings,
-            people: described
-        )
+        let faceImages = faces.map { (id: $0.id, image: $0.image) }
+        return await Task.detached(priority: .userInitiated) {
+            var faceEmbeddings: [UUID: FaceEmbedding] = [:]
+            for face in faceImages {
+                faceEmbeddings[face.id] = AdaFaceEmbedder.embedding(forAlignedFace: face.image)
+            }
+            let named = described.map { person in
+                (
+                    name: person.name,
+                    embedding: person.embedding ?? FacePhotoWork.embedding(forImagePaths: person.paths)
+                )
+            }
+            return FaceNameMatcher.labels(
+                faceIDs: faceImages.map(\.id),
+                faceEmbeddings: faceEmbeddings,
+                people: named
+            )
+        }.value
     }
 
     private func namedPeople(on path: String) async -> [(name: String, group: PersonGroup)] {
@@ -1748,20 +1793,10 @@ final class LibraryViewModel {
         }
     }
 
-    private func embedding(forNamedPerson person: PersonGroup) -> FaceEmbedding? {
-        let paths = [person.faceCropPath, person.thumbnailPath, person.memberPhotoPaths.first].compactMap { $0 }
-        for path in paths {
-            let url = URL(fileURLWithPath: path)
-            if let face = FaceAlignment.preferredThumbnail(from: url),
-               let embedding = AdaFaceEmbedder.embedding(forAlignedFace: face) {
-                return embedding
-            }
-            if let image = FaceCropExtractor.loadCGImage(url: url, maxPixel: 512),
-               let embedding = AdaFaceEmbedder.embedding(forAlignedFace: image) {
-                return embedding
-            }
-        }
-        return nil
+    private var personEmbeddingCache: [String: FaceEmbedding] = [:]
+
+    private func referenceImagePaths(for person: PersonGroup) -> [String] {
+        [person.faceCropPath, person.thumbnailPath, person.memberPhotoPaths.first].compactMap { $0 }
     }
 
     func faceChipImage(for person: PersonGroup) async -> NSImage? {

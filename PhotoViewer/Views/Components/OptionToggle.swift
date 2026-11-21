@@ -47,6 +47,16 @@ struct LibraryAnalysisControls: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            Toggle("All", isOn: Binding(
+                get: { model.allAnalysisOptionsOn },
+                set: { model.setAllAnalysisOptions($0) }
+            ))
+            .toggleStyle(.checkbox)
+            .font(.caption)
+            .fixedSize(horizontal: true, vertical: false)
+            .disabled(optionsLocked)
+            .help(optionsLocked ? "Stop analysis before changing this option." : "Turn Categories, Objects, and Faces on or off together.")
+
             OptionToggle(
                 title: "Categories",
                 helpText: "Detect semantic categories from each photo (Vision labels, text, and Apple Intelligence when available). Categories appear as chips above the grid; optional export titles are stored without renaming originals. Pin a category to Albums from the chip menu.",

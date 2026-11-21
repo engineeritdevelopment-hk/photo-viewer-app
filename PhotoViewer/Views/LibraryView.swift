@@ -41,6 +41,10 @@ struct LibraryView: View {
             }
             .navigationSplitViewStyle(.balanced)
 
+            if model.isInterfaceBusy, selectedPhoto == nil {
+                InterfaceBusyOverlay()
+            }
+
             if selectedPhoto != nil {
                 PhotoDetailView(
                     path: Binding(

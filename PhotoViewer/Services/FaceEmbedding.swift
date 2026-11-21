@@ -28,6 +28,24 @@ struct FaceEmbedding: Sendable {
     }
 }
 
+enum FacePhotoWork {
+    /// AdaFace embedding for a saved face crop or photo. Safe to call off the main thread.
+    static func embedding(forImagePaths paths: [String]) -> FaceEmbedding? {
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            if let face = FaceAlignment.preferredThumbnail(from: url),
+               let embedding = AdaFaceEmbedder.embedding(forAlignedFace: face) {
+                return embedding
+            }
+            if let image = FaceCropExtractor.loadCGImage(url: url, maxPixel: 512),
+               let embedding = AdaFaceEmbedder.embedding(forAlignedFace: image) {
+                return embedding
+            }
+        }
+        return nil
+    }
+}
+
 enum FaceNameMatcher {
     /// Names for faces in one photo. Uses the closest named person at or above the same-person cutoff.
     /// When a photo has one face and one named person but an embedding is missing, that name is used.

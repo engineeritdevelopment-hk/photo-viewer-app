@@ -1,6 +1,13 @@
 import MapKit
 import SwiftUI
 
+private struct DetailsContentHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct PhotoDetailView: View {
     @Binding var path: String
     let paths: [String]
@@ -23,6 +30,9 @@ struct PhotoDetailView: View {
     @State private var faceLabels: [UUID: String] = [:]
     @State private var highlightedFaces: [FaceAlignment.AlignedFace] = []
     @State private var frameHint: String?
+    @State private var detailsContentHeight: CGFloat = 360
+    @State private var detailFacts: [(String, String)] = []
+    @State private var locatedCoordinate: CLLocationCoordinate2D?
 
     private let room = Color(red: 0.11, green: 0.14, blue: 0.19)
     private let chromeIdleDelay: Duration = .milliseconds(750)
@@ -108,6 +118,10 @@ struct PhotoDetailView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .allowsHitTesting(false)
 
+            if model.isInterfaceBusy {
+                InterfaceBusyOverlay()
+            }
+
             if isFramingFace {
                 Text(frameHint ?? "Tap a face, or drag a box around one.")
                     .font(.caption.weight(.medium))
@@ -142,6 +156,7 @@ struct PhotoDetailView: View {
         .onChange(of: metadataExpanded) { _, expanded in
             if expanded {
                 chromeVisible = true
+                Task { await loadDetailFacts() }
             } else {
                 scheduleChromeAutoHide()
             }
@@ -262,6 +277,8 @@ struct PhotoDetailView: View {
 
             Spacer(minLength: 8)
 
+            HighlightFaceSwitch(model: model, onDarkChrome: true)
+
             Button {
                 toggleFaceFraming()
             } label: {
@@ -369,13 +386,33 @@ struct PhotoDetailView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    factsGrid
+                    if detailFacts.isEmpty, model.isInterfaceBusy {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                                .controlSize(.small)
+                            Spacer()
+                        }
+                        .padding(.vertical, 8)
+                    } else {
+                        factsGrid
+                    }
                     annotationSection
                 }
                 .padding(.horizontal, 16)
                 .padding(.bottom, 16)
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(key: DetailsContentHeight.self, value: proxy.size.height)
+                    }
+                }
             }
-            .frame(maxHeight: min(420, 520))
+            .scrollBounceBehavior(.basedOnSize)
+            .frame(height: min(detailsContentHeight, 360))
+            .onPreferenceChange(DetailsContentHeight.self) { height in
+                guard height > 1, abs(height - detailsContentHeight) > 0.5 else { return }
+                detailsContentHeight = height
+            }
         }
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -385,7 +422,7 @@ struct PhotoDetailView: View {
 
     private var factsGrid: some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 16, verticalSpacing: 8) {
-            ForEach(MetadataReader.facts(url: URL(fileURLWithPath: path)), id: \.0) { row in
+            ForEach(detailFacts, id: \.0) { row in
                 GridRow {
                     Text(row.0)
                         .font(.caption)
@@ -428,11 +465,7 @@ struct PhotoDetailView: View {
         }
     }
 
-    private var photoCoordinate: CLLocationCoordinate2D? {
-        let meta = MetadataReader.read(url: URL(fileURLWithPath: path))
-        guard let lat = meta.latitude, let lon = meta.longitude else { return nil }
-        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
-    }
+    private var photoCoordinate: CLLocationCoordinate2D? { locatedCoordinate }
 
     private var positionLabel: String? {
         ViewerNavigation.positionLabel(path: path, paths: paths)
@@ -478,7 +511,9 @@ struct PhotoDetailView: View {
             return
         }
         let currentPath = path
-        let faces = await model.highlightedFaces(on: currentPath)
+        let faces = await model.withInterfaceWork {
+            await model.highlightedFaces(on: currentPath)
+        }
         guard currentPath == path else { return }
         highlightedFaces = faces
     }
@@ -489,12 +524,18 @@ struct PhotoDetailView: View {
         chromeVisible = true
         if isFramingFace {
             metadataExpanded = false
+            let photoPath = path
             Task {
-                let faces = FaceAlignment.alignedFaces(from: URL(fileURLWithPath: path))
-                framingFaces = faces
-                faceLabels = await model.faceLabels(for: faces, path: path)
-                if faces.isEmpty {
-                    frameHint = "No face was detected. Drag a box around the face."
+                await model.withInterfaceWork {
+                    let faces = await Task.detached(priority: .userInitiated) {
+                        FaceAlignment.alignedFaces(from: URL(fileURLWithPath: photoPath))
+                    }.value
+                    guard photoPath == path, isFramingFace else { return }
+                    framingFaces = faces
+                    faceLabels = await model.faceLabels(for: faces, path: photoPath)
+                    if faces.isEmpty {
+                        frameHint = "No face was detected. Drag a box around the face."
+                    }
                 }
             }
         } else {
@@ -504,36 +545,83 @@ struct PhotoDetailView: View {
     }
 
     private func useFramedFace(_ face: FaceAlignment.AlignedFace) {
-        guard let embedding = AdaFaceEmbedder.embedding(forAlignedFace: face.image) else {
-            frameHint = "That face could not be read. Try another one."
-            return
+        let faceImage = face.image
+        let sourcePath = path
+        frameHint = nil
+        Task {
+            let embedding = await model.withInterfaceWork {
+                await Task.detached(priority: .userInitiated) {
+                    AdaFaceEmbedder.embedding(forAlignedFace: faceImage)
+                }.value
+            }
+            guard let embedding else {
+                frameHint = "That face could not be read. Try another one."
+                return
+            }
+            model.beginFaceSearch(embedding: embedding, face: faceImage, sourcePath: sourcePath)
+            onClose()
         }
-        model.beginFaceSearch(embedding: embedding, face: face.image, sourcePath: path)
-        onClose()
     }
 
     private func frameAndSearch(_ normalizedRect: CGRect) {
-        guard let image = FaceCropExtractor.loadCGImage(url: URL(fileURLWithPath: path), maxPixel: 2048),
-              let face = FaceAlignment.face(framedBy: normalizedRect, among: framingFaces, image: image)
-        else {
-            frameHint = "No face in that box. Drag closer around the face."
-            return
+        let photoPath = path
+        let knownFaces = framingFaces
+        Task {
+            let face = await model.withInterfaceWork {
+                await Task.detached(priority: .userInitiated) { () -> FaceAlignment.AlignedFace? in
+                    guard let image = FaceCropExtractor.loadCGImage(url: URL(fileURLWithPath: photoPath), maxPixel: 2048) else {
+                        return nil
+                    }
+                    return FaceAlignment.face(framedBy: normalizedRect, among: knownFaces, image: image)
+                }.value
+            }
+            guard let face else {
+                frameHint = "No face in that box. Drag closer around the face."
+                return
+            }
+            useFramedFace(face)
         }
-        useFramedFace(face)
     }
 
     private func loadForCurrentPath() async {
         isLoading = true
         image = nil
         photoCategories = []
+        detailFacts = []
+        locatedCoordinate = nil
         annotation = model.annotation(for: path)
         isFavorite = model.isFavorite(path: path)
-        async let categories = model.analysisCategories(for: path)
-        async let loadedImage = model.fullImage(for: path)
+        let photoPath = path
+        async let categories = model.analysisCategories(for: photoPath)
+        async let loadedImage = model.fullImage(for: photoPath)
+        async let coordinate = Task.detached {
+            Self.coordinate(at: photoPath)
+        }.value
         photoCategories = await categories
         image = await loadedImage
+        locatedCoordinate = await coordinate
         isLoading = false
         keysFocused = true
+        if metadataExpanded {
+            await loadDetailFacts()
+        }
+    }
+
+    private func loadDetailFacts() async {
+        let photoPath = path
+        let rows = await model.withInterfaceWork {
+            await Task.detached {
+                MetadataReader.facts(url: URL(fileURLWithPath: photoPath))
+            }.value
+        }
+        guard photoPath == path else { return }
+        detailFacts = rows
+    }
+
+    private static func coordinate(at path: String) -> CLLocationCoordinate2D? {
+        let meta = MetadataReader.read(url: URL(fileURLWithPath: path))
+        guard let lat = meta.latitude, let lon = meta.longitude else { return nil }
+        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
     }
 
     private func saveAndDismiss() {

@@ -253,6 +253,34 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertEqual(model.deleteBinCount, 0)
     }
 
+    func testHeavyWorkShowsTheSpinnerUntilItFinishes() async {
+        let model = LibraryViewModel(project: projects.projects[0], projects: projects)
+        XCTAssertFalse(model.isInterfaceBusy)
+        var sawSpinner = false
+        await model.withInterfaceWork {
+            sawSpinner = model.isInterfaceBusy
+        }
+        XCTAssertTrue(sawSpinner)
+        XCTAssertFalse(model.isInterfaceBusy)
+    }
+
+    func testSelectAllAnalysisOptionsTurnsEachOneOnAndOff() {
+        let model = LibraryViewModel(project: projects.projects[0], projects: projects)
+        model.categoryDetectionOn = true
+        XCTAssertFalse(model.allAnalysisOptionsOn)
+
+        model.setAllAnalysisOptions(true)
+        XCTAssertTrue(model.categoryDetectionOn)
+        XCTAssertTrue(model.objectDetectionOn)
+        XCTAssertTrue(model.analyzeFacesOn)
+        XCTAssertTrue(model.allAnalysisOptionsOn)
+
+        model.setAllAnalysisOptions(false)
+        XCTAssertFalse(model.categoryDetectionOn)
+        XCTAssertFalse(model.objectDetectionOn)
+        XCTAssertFalse(model.analyzeFacesOn)
+    }
+
     func testPhotoFilterExcludesByExtensionAndName() {
         var filter = PhotoFilter()
         filter.excludedExtensions = ["png"]
@@ -262,4 +290,42 @@ final class LibraryViewModelTests: XCTestCase {
         XCTAssertFalse(filter.allows(path: "/tmp/shot.PNG"))
         XCTAssertFalse(filter.allows(path: "/tmp/my_screenshot.jpg"))
     }
+
+    func testHighlightingAFaceLeavesTheMainActorResponsive() async throws {
+        let bundled = try XCTUnwrap(Bundle(for: LibraryViewModelTests.self).url(forResource: "bus", withExtension: "jpg"))
+        let photo = tempRoot.appendingPathComponent("bus.jpg")
+        try Data(contentsOf: bundled).write(to: photo)
+
+        var project = projects.projects[0]
+        project.personGroups = [
+            PersonGroup(
+                id: "rider",
+                displayName: "Rider",
+                memberPhotoPaths: [photo.path],
+                thumbnailPath: photo.path
+            ),
+        ]
+        projects.update(project)
+        let model = LibraryViewModel(project: projects.projects[0], projects: projects)
+        model.highlightsFilteredFace = true
+        model.selectedSidebarKey = "person:rider"
+
+        let gate = MainActorGate()
+        let ticker = Task { @MainActor in
+            var ticks = 0
+            while !gate.finished {
+                ticks += 1
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            return ticks
+        }
+        _ = await model.highlightedFaces(on: photo.path)
+        gate.finished = true
+        let ticks = await ticker.value
+        XCTAssertGreaterThan(ticks, 1, "Highlighting a face blocked the main actor")
+    }
+}
+
+private final class MainActorGate: @unchecked Sendable {
+    var finished = false
 }
