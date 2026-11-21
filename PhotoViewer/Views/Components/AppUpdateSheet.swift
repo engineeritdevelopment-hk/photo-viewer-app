@@ -26,7 +26,9 @@ struct AppUpdateSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .textSelection(.enabled)
         }
-        .frame(maxHeight: 160)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else {
+        Spacer(minLength: 0)
       }
 
       installStatusView
@@ -54,7 +56,7 @@ struct AppUpdateSheet: View {
       }
     }
     .padding(24)
-    .frame(width: 440)
+    .frame(width: 460, height: 560)
   }
 
   private var isBusy: Bool {

@@ -49,8 +49,6 @@ struct ContentView: View {
 
     private func libraryModel(for project: LibraryProject) -> LibraryViewModel {
         if let cached = libraryModels[project.id] {
-            cached.project = project
-            cached.prepareForOpening()
             return cached
         }
         let model = LibraryViewModel(project: project, projects: projects)

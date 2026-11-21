@@ -10,11 +10,16 @@ struct LibraryView: View {
     @State private var newAlbumName = ""
     @State private var pendingAlbumDropPaths: [String] = []
     @State private var showDeleteBinConfirm = false
+    @State private var showExportAlbumAlert = false
     @State private var isEditingSources = false
     @State private var browseYearsExpanded = false
     @State private var browsePlacesExpanded = false
     @State private var browseCamerasExpanded = false
+    @State private var browsePeopleExpanded = false
+    @State private var browseObjectsExpanded = false
     @State private var filterSourcesExpanded = false
+    @State private var renamingLookedUpPersonId: String?
+    @State private var lookedUpRenameText = ""
     @AppStorage(AppPreferences.showPeopleBarKey) private var showPeopleBar = true
     @AppStorage(AppPreferences.photoSortKey) private var storedPhotoSort = LibraryPhotoSort.dateNewest.rawValue
     @State private var gridCellFrames: [String: CGRect] = [:]
@@ -58,6 +63,7 @@ struct LibraryView: View {
             }
             model.onAppear()
             syncFiltersFromProject()
+            revealFilterSidebarSelection(model.selectedSidebarKey)
         }
         .onChange(of: model.photoSort) { _, newValue in
             storedPhotoSort = newValue.rawValue
@@ -88,6 +94,11 @@ struct LibraryView: View {
                 Text("Create an album and add \(count) \(noun).")
             }
         }
+        .alert("Select an album to export", isPresented: $showExportAlbumAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Choose an album in the sidebar, then export it.")
+        }
         .alert("Delete from source?", isPresented: $showDeleteBinConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Move to Trash", role: .destructive) {
@@ -113,7 +124,11 @@ struct LibraryView: View {
             LibraryHeaderBar(
                 model: model,
                 excludedNames: $excludedNames,
-                onExport: model.exportSelectedAlbum
+                onExport: {
+                    if !model.exportSelectedAlbum() {
+                        showExportAlbumAlert = true
+                    }
+                }
             )
             LibraryAnalysisSection(
                 model: model,
@@ -137,12 +152,51 @@ struct LibraryView: View {
             .accessibilityLabel("Back to projects")
 
             Section("Filter") {
-                filterSidebarRow("All Photos", systemImage: "photo.on.rectangle", key: nil)
+                filterSidebarRow("All Photos", systemImage: "photo.on.rectangle", key: nil, sectionLevel: true)
+                if !model.lookedUpPeople.isEmpty {
+                    DisclosureGroup(isExpanded: $browsePeopleExpanded) {
+                        ForEach(model.lookedUpPeople) { person in
+                            lookedUpPersonRow(person)
+                        }
+                    } label: {
+                        sidebarFilterGroupLabel("People", systemImage: "person.crop.circle", count: model.lookedUpPeople.count)
+                    }
+                }
+                DisclosureGroup(isExpanded: $browseObjectsExpanded) {
+                    TextField("Search objects", text: $model.objectSearchText)
+                        .textFieldStyle(.roundedBorder)
+                        .onChange(of: model.objectSearchText) { _, _ in
+                            if model.selectedSidebarKey?.hasPrefix("object:") == true {
+                                model.selectedSidebarKey = nil
+                            }
+                            model.scheduleReloadVisiblePaths()
+                        }
+                    if model.sidebarObjects.isEmpty {
+                        Text("Run Objects analysis to name things in your photos.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else if model.filteredSidebarObjects.isEmpty {
+                        Text("No objects match.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(model.filteredSidebarObjects, id: \.name) { row in
+                            filterSidebarRow(
+                                "\(row.name) (\(row.count))",
+                                systemImage: "cube",
+                                key: "object:\(row.name)"
+                            )
+                        }
+                    }
+                } label: {
+                    sidebarFilterGroupLabel("Objects", systemImage: "cube", count: model.sidebarObjects.count)
+                }
                 if model.sidebarScreenshotCount > 0 {
                     filterSidebarRow(
                         "Screenshots (\(model.sidebarScreenshotCount))",
                         systemImage: "rectangle.dashed",
-                        key: "browse:screenshots"
+                        key: "browse:screenshots",
+                        sectionLevel: true
                     )
                 }
                 if !model.sidebarYears.isEmpty {
@@ -253,6 +307,22 @@ struct LibraryView: View {
             }
         }
         .listStyle(.sidebar)
+        .alert(
+            "Rename person",
+            isPresented: Binding(
+                get: { renamingLookedUpPersonId != nil },
+                set: { if !$0 { renamingLookedUpPersonId = nil } }
+            )
+        ) {
+            TextField("Name", text: $lookedUpRenameText)
+            Button("Cancel", role: .cancel) { renamingLookedUpPersonId = nil }
+            Button("Save") {
+                if let id = renamingLookedUpPersonId {
+                    model.renamePerson(id: id, name: lookedUpRenameText)
+                }
+                renamingLookedUpPersonId = nil
+            }
+        }
         .onChange(of: model.selectedSidebarKey) { _, newValue in
             model.applySidebarKey(newValue)
             revealFilterSidebarSelection(newValue)
@@ -265,6 +335,8 @@ struct LibraryView: View {
         if key.hasPrefix("date:") { browseYearsExpanded = true }
         if key.hasPrefix("place:") { browsePlacesExpanded = true }
         if key.hasPrefix("camera:") { browseCamerasExpanded = true }
+        if key.hasPrefix("person:") { browsePeopleExpanded = true }
+        if key.hasPrefix("object:") { browseObjectsExpanded = true }
         if key.hasPrefix("source:") || key.hasPrefix("folder:") { filterSourcesExpanded = true }
     }
 
@@ -638,8 +710,75 @@ struct LibraryView: View {
         .sidebarListRowInsets()
     }
 
+    private func lookedUpPersonRow(_ person: PersonGroup) -> some View {
+        let key = "person:\(person.id)"
+        let isSelected = model.selectedSidebarKey == key
+        let name = person.displayName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = (name?.isEmpty == false) ? name! : "Person"
+        return HStack(alignment: .center, spacing: 2) {
+            Button {
+                model.selectPerson(id: person.id)
+            } label: {
+                HStack(alignment: .center, spacing: 8) {
+                    LookedUpPersonThumbnail(path: person.faceCropPath, isSelected: isSelected)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(title)
+                            .font(.callout.weight(isSelected ? .semibold : .regular))
+                            .foregroundStyle(Color.primary)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                        Text("\(person.memberPhotoPaths.count)")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 4)
+                .background {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .fill(isSelected ? Color.accentColor.opacity(0.34) : Color.clear)
+                }
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+                }
+            }
+            .buttonStyle(.plain)
+            if isSelected {
+                SidebarSectionIconButton(systemImage: "pencil", help: "Rename") {
+                    beginLookedUpRename(person)
+                }
+                SidebarSectionIconButton(
+                    systemImage: "trash",
+                    role: .destructive,
+                    help: "Remove this person"
+                ) {
+                    model.removePersonGroup(id: person.id)
+                }
+            }
+        }
+        .tag(key)
+        .listRowInsets(EdgeInsets(top: 4, leading: 4, bottom: 4, trailing: 6))
+        .contextMenu {
+            Button("Rename…") { beginLookedUpRename(person) }
+            Button("Remove", role: .destructive) { model.removePersonGroup(id: person.id) }
+        }
+        .help("\(title). Rename or remove this looked-up face.")
+    }
+
+    private func beginLookedUpRename(_ person: PersonGroup) {
+        lookedUpRenameText = person.displayName ?? ""
+        renamingLookedUpPersonId = person.id
+    }
+
     @ViewBuilder
-    private func filterSidebarRow(_ title: String, systemImage: String, key: String?) -> some View {
+    private func filterSidebarRow(
+        _ title: String,
+        systemImage: String,
+        key: String?,
+        sectionLevel: Bool = false
+    ) -> some View {
         let isSelected = model.selectedSidebarKey == key
         Button {
             model.selectSidebarFilter(key)
@@ -653,7 +792,7 @@ struct LibraryView: View {
         }
         .buttonStyle(SidebarListRowButtonStyle(isSelected: isSelected))
         .tag(key)
-        .sidebarListRowInsets()
+        .listRowInsets(sectionLevel ? SidebarListMetrics.filterSectionRowInsets : SidebarListMetrics.rowInsets)
     }
 
     private func sidebarFilterGroupLabel(_ title: String, systemImage: String, count: Int) -> some View {
@@ -668,6 +807,41 @@ struct LibraryView: View {
             return "\(String(title.prefix(26)))… (\(count))"
         }
         return "\(title) (\(count))"
+    }
+}
+
+private struct LookedUpPersonThumbnail: View {
+    let path: String?
+    var isSelected: Bool
+
+    /// Same circle size as a face in the People row.
+    private let size: CGFloat = 40
+
+    var body: some View {
+        Group {
+            if let path, let image = NSImage(contentsOfFile: path) {
+                Image(nsImage: image)
+                    .resizable()
+                    .renderingMode(.original)
+                    .scaledToFill()
+            } else {
+                Image(systemName: "person.crop.circle")
+                    .resizable()
+                    .scaledToFit()
+                    .foregroundStyle(.secondary)
+                    .padding(8)
+            }
+        }
+        .frame(width: size, height: size)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(Circle())
+        .overlay {
+            Circle()
+                .strokeBorder(
+                    isSelected ? Color.accentColor : Color.primary.opacity(0.18),
+                    lineWidth: isSelected ? 2.5 : 1
+                )
+        }
     }
 }
 

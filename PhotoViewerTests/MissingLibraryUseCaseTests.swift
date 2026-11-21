@@ -117,6 +117,8 @@ final class MissingLibraryUseCaseTests: XCTestCase {
             Set($0) == [IndexedPhotoFixture.pathBeach, IndexedPhotoFixture.path2020, IndexedPhotoFixture.pathOther]
         }
         XCTAssertEqual(model.visiblePaths.count, 3)
+        XCTAssertTrue(model.isViewFiltered)
+        XCTAssertEqual(model.viewFilterSummary, "Category: Food")
 
         let food = model.detectedCategories.first { $0.title == "Food" }!
         model.pinCategoryAsAlbum(food)
@@ -164,6 +166,64 @@ final class MissingLibraryUseCaseTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: crop.path))
         let record = try await store.record(for: IndexedPhotoFixture.pathBeach)
         XCTAssertTrue(record?.personGroupIds.isEmpty == true)
+    }
+
+    func testClearAnalysisDataKeepsPhotosAndNotes() async throws {
+        let (model, store) = try await indexedModel()
+        try await store.updateAnalysis(
+            path: IndexedPhotoFixture.pathBeach,
+            sceneLabels: ["portrait"],
+            ocrSnippet: "hello",
+            semanticCategory: "People",
+            source: .metadata
+        )
+        try await store.updatePersonGroups(path: IndexedPhotoFixture.pathBeach, groupIds: ["p1"])
+        let crop = tempRoot.appendingPathComponent("face.jpg")
+        try Data("face".utf8).write(to: crop)
+        var project = model.project
+        project.personGroups = [
+            PersonGroup(
+                id: "p1",
+                displayName: "Ada",
+                memberPhotoPaths: [IndexedPhotoFixture.pathBeach],
+                faceCropPath: crop.path
+            ),
+        ]
+        project.analysisCheckpoint = AnalysisCheckpoint(
+            completedAt: Date(),
+            indexedPathCount: 4,
+            sourceFingerprint: "src"
+        )
+        projects.update(project)
+        model.project = projects.projects[0]
+        model.updateAnnotation(PhotoAnnotation(path: IndexedPhotoFixture.pathBeach, place: "Hall", suggestedTitle: "Title"))
+        model.selectSemanticCategory("People")
+
+        model.clearAnalysisData()
+        for _ in 0 ..< 40 {
+            let record = try await store.record(for: IndexedPhotoFixture.pathBeach)
+            if model.project.personGroups.isEmpty,
+               record?.semanticCategory == nil,
+               record?.personGroupIds.isEmpty == true {
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(40))
+        }
+
+        let record = try await store.record(for: IndexedPhotoFixture.pathBeach)
+        let photoCount = try await store.count()
+        XCTAssertNil(record?.semanticCategory)
+        XCTAssertNil(record?.ocrSnippet)
+        XCTAssertTrue(record?.sceneLabels.isEmpty == true)
+        XCTAssertTrue(record?.personGroupIds.isEmpty == true)
+        XCTAssertEqual(photoCount, 4)
+        XCTAssertTrue(model.project.personGroups.isEmpty)
+        XCTAssertNil(model.project.analysisCheckpoint)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: crop.path))
+        XCTAssertEqual(model.annotation(for: IndexedPhotoFixture.pathBeach).place, "Hall")
+        XCTAssertNil(model.annotation(for: IndexedPhotoFixture.pathBeach).suggestedTitle)
+        XCTAssertNil(model.selectedSidebarKey)
+        XCTAssertTrue(model.detectedCategories.isEmpty)
     }
 
     func testDeleteBinViewAndEmptyWithoutDeletingFiles() async throws {
@@ -214,7 +274,7 @@ final class MissingLibraryUseCaseTests: XCTestCase {
 
     func testExportRequiresASelectedAlbum() {
         let model = LibraryViewModel(project: projects.projects[0], projects: projects)
-        model.exportSelectedAlbum()
-        XCTAssertEqual(model.activity.errorMessage, "Select an album to export.")
+        XCTAssertFalse(model.exportSelectedAlbum())
+        XCTAssertNil(model.activity.errorMessage)
     }
 }

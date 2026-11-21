@@ -9,14 +9,11 @@ struct LibraryPeopleBar: View {
     @FocusState private var renameFocused: Bool
 
     private let chipAvatarSize: CGFloat = 40
-    /// Room for avatar, name, and the hover remove control that sits above the circle.
-    private let peopleStripHeight: CGFloat = 68
+    /// Avatar, name slot (tall enough for the rename field), and the hover remove control.
+    private let peopleStripHeight: CGFloat = 82
 
     private var sortedPeople: [PersonGroup] {
         model.project.personGroups.sorted { lhs, rhs in
-            let leftName = (lhs.displayName ?? "").lowercased()
-            let rightName = (rhs.displayName ?? "").lowercased()
-            if leftName != rightName { return leftName < rightName }
             if lhs.memberPhotoPaths.count != rhs.memberPhotoPaths.count {
                 return lhs.memberPhotoPaths.count > rhs.memberPhotoPaths.count
             }
@@ -124,7 +121,7 @@ struct LibraryPeopleBar: View {
                     .padding(.bottom, 2)
                 }
                 .scrollClipDisabled()
-                .frame(height: renamingPersonId == nil ? peopleStripHeight : peopleStripHeight + 28)
+                .frame(height: peopleStripHeight)
             }
             .padding(.horizontal, embedded ? 0 : 12)
             .padding(.vertical, embedded ? 0 : 4)
@@ -214,9 +211,8 @@ private struct PersonFaceChip: View {
                     }
                 }
                 .buttonStyle(.plain)
-                .onHover { isAvatarHovered = $0 }
 
-                if allowsEditActions && isAvatarHovered {
+                if allowsEditActions {
                     Button(action: onRemove) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 15, weight: .semibold))
@@ -224,42 +220,17 @@ private struct PersonFaceChip: View {
                             .foregroundStyle(Color.white, Color.black.opacity(0.72))
                     }
                     .buttonStyle(.plain)
-                    .offset(x: 4, y: -4)
-                    .zIndex(1)
+                    .padding(1)
+                    .opacity(isAvatarHovered ? 1 : 0)
+                    .allowsHitTesting(isAvatarHovered)
                     .help("Remove this face detection result")
-                    .transition(.opacity)
                 }
             }
             .frame(width: avatarSize + 6, height: avatarSize + 6, alignment: .center)
+            .contentShape(Rectangle())
+            .onHover { isAvatarHovered = $0 }
 
-            if isRenaming {
-                TextField("Name", text: $renameText)
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.mini)
-                    .frame(width: avatarSize + 12)
-                    .focused(renameFocused)
-                    .onSubmit(onCommitRename)
-                    .onAppear { renameFocused.wrappedValue = true }
-            } else {
-                HStack(spacing: 3) {
-                    Text(subtitleLabel)
-                        .font(.caption2)
-                        .lineLimit(1)
-                    if allowsEditActions && isNameHovered {
-                        Button(action: onBeginRename) {
-                            Image(systemName: "pencil")
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Rename")
-                    }
-                }
-                .frame(width: avatarSize + 12)
-                .contentShape(Rectangle())
-                .onHover { isNameHovered = $0 }
-                .onTapGesture(count: 2, perform: onBeginRename)
-            }
+            nameSlot
         }
         .animation(.easeOut(duration: 0.15), value: isAvatarHovered)
         .animation(.easeOut(duration: 0.15), value: isNameHovered)
@@ -267,6 +238,43 @@ private struct PersonFaceChip: View {
         .task(id: person.id) {
             image = await loader(person)
         }
+    }
+
+    private var nameSlot: some View {
+        ZStack {
+            if isRenaming {
+                TextField("Name", text: $renameText)
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.mini)
+                    .focused(renameFocused)
+                    .onSubmit(onCommitRename)
+                    .onAppear { renameFocused.wrappedValue = true }
+            } else {
+                Text(subtitleLabel)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .padding(.trailing, allowsEditActions ? 12 : 0)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        guard allowsEditActions else { return }
+                        onBeginRename()
+                    }
+                    .overlay(alignment: .trailing) {
+                        if allowsEditActions && isNameHovered {
+                            Button(action: onBeginRename) {
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Rename")
+                        }
+                    }
+            }
+        }
+        .frame(width: avatarSize + 16, height: 22)
+        .onHover { isNameHovered = $0 }
     }
 
     private var subtitleLabel: String {

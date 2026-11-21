@@ -3,6 +3,8 @@ import SwiftUI
 enum SidebarListMetrics {
     static let rowInsets = EdgeInsets(top: 1, leading: 2, bottom: 1, trailing: 6)
     static let compactRowInsets = EdgeInsets(top: 0, leading: 2, bottom: 0, trailing: 6)
+    /// Top-level Filter rows sit beside disclosure groups. Sidebar outline style indents them like children; this pulls the icon back in line with the group labels.
+    static let filterSectionRowInsets = EdgeInsets(top: 1, leading: -16, bottom: 1, trailing: 6)
     /// “Back to projects” sits flush with other rows; default List + Section chrome adds too much leading space.
     static let backRowInsets = EdgeInsets(top: 0, leading: -4, bottom: 4, trailing: 6)
     static let iconWidth: CGFloat = 16

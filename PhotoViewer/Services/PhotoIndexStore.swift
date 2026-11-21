@@ -99,6 +99,8 @@ actor PhotoIndexStore {
         CREATE INDEX IF NOT EXISTS idx_photos_camera ON photos(camera_model);
         CREATE INDEX IF NOT EXISTS idx_photos_source ON photos(source_id);
         """)
+        // Added after the original table. Ignore the error when the column is already there.
+        try? exec("ALTER TABLE photos ADD COLUMN object_labels TEXT")
     }
 
     func upsertCatalogRow(
@@ -194,6 +196,65 @@ actor PhotoIndexStore {
                 .text(path),
             ]
         )
+    }
+
+    func clearAnalysis() throws {
+        try bind(
+            """
+            UPDATE photos SET
+                scene_labels = NULL,
+                ocr_snippet = NULL,
+                semantic_category = NULL,
+                analysis_source = NULL,
+                person_group_ids = NULL,
+                object_labels = NULL
+            """
+        )
+    }
+
+    func updateObjectLabels(path: String, names: [String]) throws {
+        try bind(
+            "UPDATE photos SET object_labels = ? WHERE path = ?",
+            args: [.optionalText(ObjectLabels.encode(names)), .text(path)]
+        )
+    }
+
+    func groupByObject() throws -> [(name: String, count: Int)] {
+        var counts: [String: Int] = [:]
+        var display: [String: String] = [:]
+        try query("SELECT object_labels FROM photos WHERE object_labels IS NOT NULL AND object_labels != ''") { stmt in
+            for name in ObjectLabels.decode(Self.textColumn(stmt, 0)) {
+                let key = name.lowercased()
+                counts[key, default: 0] += 1
+                // Keep a capitalized spelling when the same object was stored in more than one case.
+                if display[key] == nil || display[key] == key && name != key {
+                    display[key] = name
+                }
+            }
+        }
+        return counts
+            .map { (name: display[$0.key] ?? $0.key, count: $0.value) }
+            .sorted { lhs, rhs in
+                if lhs.count != rhs.count { return lhs.count > rhs.count }
+                return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+            }
+    }
+
+    func pathsMatchingObject(query: String, exact: Bool) throws -> [String] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return [] }
+        let pattern = exact
+            ? "%|\(trimmed)|%"
+            : "%\(trimmed)%"
+        var paths: [String] = []
+        try self.query(
+            "SELECT path FROM photos WHERE object_labels LIKE ? COLLATE NOCASE",
+            args: [.text(pattern)]
+        ) { stmt in
+            guard let cString = sqlite3_column_text(stmt, 0) else { return }
+            paths.append(String(cString: cString))
+        }
+        return paths
     }
 
     func updatePersonGroups(path: String, groupIds: [String]) throws {
@@ -576,6 +637,7 @@ actor PhotoIndexStore {
         let analysisRaw = textColumn(stmt, 17)
         let analysisSource = analysisRaw.flatMap(AnalysisSource.init(rawValue:))
         let personIds = (textColumn(stmt, 18) ?? "").split(separator: "|").map(String.init)
+        let objectLabels = ObjectLabels.decode(textColumn(stmt, 19))
 
         return PhotoRecord(
             path: path,
@@ -596,7 +658,8 @@ actor PhotoIndexStore {
             ocrSnippet: ocrSnippet,
             semanticCategory: semanticCategory,
             analysisSource: analysisSource,
-            personGroupIds: personIds
+            personGroupIds: personIds,
+            objectLabels: objectLabels
         )
     }
 

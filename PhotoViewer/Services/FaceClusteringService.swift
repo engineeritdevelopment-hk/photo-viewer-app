@@ -1,5 +1,4 @@
 import Foundation
-import Vision
 
 struct FaceClusteringService: Sendable {
     struct Output: Sendable {
@@ -7,14 +6,13 @@ struct FaceClusteringService: Sendable {
         var pathToGroupIds: [String: [String]]
     }
 
-    /// Vision feature-print distance: lower = more similar faces.
-    private let clusterThreshold: Float = 0.58
+    /// AdaFace cosine similarity on unit embeddings. Higher = more likely the same person.
+    private let minimumCosine = FaceEmbedding.samePersonCosine
     private let unionFindFaceLimit = 4_000
 
     private struct FaceInstance {
         let photoPath: String?
-        let crop: CGImage?
-        let print: VNFeaturePrintObservation
+        let embedding: FaceEmbedding
         /// Set for anchors representing an existing person group.
         let presetGroupId: String?
     }
@@ -52,19 +50,27 @@ struct FaceClusteringService: Sendable {
         var instances: [FaceInstance] = []
         instances.reserveCapacity(total * 2 + existingGroups.count)
 
+        guard AdaFaceEmbedder.isAvailable() else {
+            return Output(groups: existingGroups, pathToGroupIds: [:])
+        }
+
         for group in existingGroups {
-            guard let print = representativePrint(for: group) else { continue }
+            guard let embedding = representativeEmbedding(for: group) else { continue }
             instances.append(
-                FaceInstance(photoPath: nil, crop: nil, print: print, presetGroupId: group.id)
+                FaceInstance(photoPath: nil, embedding: embedding, presetGroupId: group.id)
             )
         }
 
         for (index, path) in paths.enumerated() {
             if Task.isCancelled { break }
             let url = URL(fileURLWithPath: path)
-            for crop in FaceCropExtractor.faceCrops(from: url) {
-                guard let print = featurePrint(cgImage: crop) else { continue }
-                instances.append(FaceInstance(photoPath: path, crop: crop, print: print, presetGroupId: nil))
+            let embeddings: [FaceEmbedding] = autoreleasepool {
+                FaceAlignment.alignedFaces(from: url).compactMap {
+                    AdaFaceEmbedder.embedding(forAlignedFace: $0.image)
+                }
+            }
+            for embedding in embeddings {
+                instances.append(FaceInstance(photoPath: path, embedding: embedding, presetGroupId: nil))
             }
             if let onProgress, index % 8 == 7 || index == total - 1 {
                 await onProgress(index + 1, total)
@@ -91,7 +97,8 @@ struct FaceClusteringService: Sendable {
                     displayName: existing.displayName,
                     memberPhotoPaths: [],
                     thumbnailPath: existing.thumbnailPath,
-                    faceCropPath: existing.faceCropPath
+                    faceCropPath: existing.faceCropPath,
+                    isLookedUp: existing.isLookedUp
                 )
             }
 
@@ -100,18 +107,14 @@ struct FaceClusteringService: Sendable {
                     group.memberPhotoPaths.append(path)
                 }
                 if group.thumbnailPath == nil { group.thumbnailPath = path }
-                if group.faceCropPath == nil, let crop = instance.crop {
-                    group.faceCropPath = FaceThumbnailWriter.save(cgImage: crop, groupId: groupId)
-                }
                 groupsById[groupId] = group
             } else {
-                let cropPath = instance.crop.flatMap { FaceThumbnailWriter.save(cgImage: $0, groupId: groupId) }
                 groupsById[groupId] = PersonGroup(
                     id: groupId,
                     displayName: nil,
                     memberPhotoPaths: [path],
                     thumbnailPath: path,
-                    faceCropPath: cropPath
+                    faceCropPath: nil
                 )
             }
 
@@ -120,6 +123,17 @@ struct FaceClusteringService: Sendable {
 
         for (path, ids) in pathToGroupIds {
             pathToGroupIds[path] = Array(Set(ids))
+        }
+
+        for id in Array(groupsById.keys) {
+            guard var group = groupsById[id], group.faceCropPath == nil else { continue }
+            guard let path = group.thumbnailPath ?? group.memberPhotoPaths.first else { continue }
+            let crop = autoreleasepool {
+                FaceAlignment.preferredThumbnail(from: URL(fileURLWithPath: path))
+            }
+            guard let crop else { continue }
+            group.faceCropPath = FaceThumbnailWriter.save(cgImage: crop, groupId: id)
+            groupsById[id] = group
         }
 
         var groups = Array(groupsById.values).filter { !$0.memberPhotoPaths.isEmpty }
@@ -150,7 +164,7 @@ struct FaceClusteringService: Sendable {
         var set = DisjointSet(count: instances.count)
         for i in 0 ..< instances.count {
             for j in (i + 1) ..< instances.count {
-                if let gap = distance(instances[i].print, instances[j].print), gap < clusterThreshold {
+                if similarity(instances[i].embedding, instances[j].embedding) >= minimumCosine {
                     set.union(i, j)
                 }
             }
@@ -181,10 +195,10 @@ struct FaceClusteringService: Sendable {
         instances: [FaceInstance],
         existingById: [String: PersonGroup]
     ) -> [String?] {
-        var prints: [(id: String, print: VNFeaturePrintObservation)] = []
+        var known: [(id: String, embedding: FaceEmbedding)] = []
         for group in existingById.values {
-            if let print = representativePrint(for: group) {
-                prints.append((group.id, print))
+            if let embedding = representativeEmbedding(for: group) {
+                known.append((group.id, embedding))
             }
         }
 
@@ -192,11 +206,11 @@ struct FaceClusteringService: Sendable {
             if let preset = instance.presetGroupId {
                 return preset
             }
-            if let match = nearestGroup(print: instance.print, among: prints, threshold: clusterThreshold) {
+            if let match = nearestGroup(embedding: instance.embedding, among: known, threshold: minimumCosine) {
                 return match
             }
             let id = UUID().uuidString
-            prints.append((id, instance.print))
+            known.append((id, instance.embedding))
             return id
         }
     }
@@ -228,53 +242,36 @@ struct FaceClusteringService: Sendable {
     }
 
     private func nearestGroup(
-        print: VNFeaturePrintObservation,
-        among candidates: [(id: String, print: VNFeaturePrintObservation)],
+        embedding: FaceEmbedding,
+        among candidates: [(id: String, embedding: FaceEmbedding)],
         threshold: Float
     ) -> String? {
-        var best: (id: String, distance: Float)?
+        var best: (id: String, similarity: Float)?
         for candidate in candidates {
-            guard let distance = distance(print, candidate.print), distance < threshold else { continue }
-            if best == nil || distance < best!.distance {
-                best = (candidate.id, distance)
+            let score = similarity(embedding, candidate.embedding)
+            guard score >= threshold else { continue }
+            if best == nil || score > best!.similarity {
+                best = (candidate.id, score)
             }
         }
         return best?.id
     }
 
-    private func distance(_ a: VNFeaturePrintObservation, _ b: VNFeaturePrintObservation) -> Float? {
-        var value: Float = 0
-        do {
-            try a.computeDistance(&value, to: b)
-            return value
-        } catch {
-            return nil
-        }
+    private func similarity(_ a: FaceEmbedding, _ b: FaceEmbedding) -> Float {
+        a.cosineSimilarity(to: b)
     }
 
-    private func representativePrint(for group: PersonGroup) -> VNFeaturePrintObservation? {
-        if let crop = group.faceCropPath {
-            return featurePrint(for: URL(fileURLWithPath: crop))
-        }
-        if let photo = group.thumbnailPath ?? group.memberPhotoPaths.first {
-            return featurePrint(for: URL(fileURLWithPath: photo))
+    /// Re-align the person's photo. Saved crops from the old matcher are not ArcFace-aligned.
+    private func representativeEmbedding(for group: PersonGroup) -> FaceEmbedding? {
+        let candidates = [group.thumbnailPath, group.memberPhotoPaths.first, group.faceCropPath]
+        for path in candidates {
+            guard let path else { continue }
+            let embedding = autoreleasepool { () -> FaceEmbedding? in
+                guard let face = FaceAlignment.preferredThumbnail(from: URL(fileURLWithPath: path)) else { return nil }
+                return AdaFaceEmbedder.embedding(forAlignedFace: face)
+            }
+            if let embedding { return embedding }
         }
         return nil
-    }
-
-    private func featurePrint(for url: URL) -> VNFeaturePrintObservation? {
-        if url.path.contains("face-crops") {
-            guard let cgImage = FaceCropExtractor.loadCGImage(url: url, maxPixel: 512) else { return nil }
-            return featurePrint(cgImage: cgImage)
-        }
-        guard let crop = FaceCropExtractor.largestFace(from: url) else { return nil }
-        return featurePrint(cgImage: crop)
-    }
-
-    private func featurePrint(cgImage: CGImage) -> VNFeaturePrintObservation? {
-        let request = VNGenerateImageFeaturePrintRequest()
-        let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-        try? handler.perform([request])
-        return request.results?.first as? VNFeaturePrintObservation
     }
 }

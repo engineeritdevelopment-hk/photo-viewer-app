@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Cursor afterFileEdit: debounced Debug build + restart Photo Viewer when app sources change.
+# Cursor afterFileEdit: debounced Release build and local install when app sources change.
 set -euo pipefail
+
+export PATH="/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
 
 HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HOOK_DIR/../.." && pwd)"
@@ -10,8 +12,11 @@ LOG_FILE="$HOOK_DIR/rebuild.log"
 
 INPUT="$(cat || true)"
 
-mapfile -t EDITED_PATHS < <(INPUT_JSON="$INPUT" ROOT_DIR="$ROOT" python3 <<'PY'
-import json, os, sys
+EDITED_PATHS=()
+while IFS= read -r line; do
+  [[ -n "$line" ]] && EDITED_PATHS+=("$line")
+done < <(INPUT_JSON="$INPUT" ROOT_DIR="$ROOT" python3 <<'PY'
+import json, os
 
 raw = os.environ.get("INPUT_JSON", "")
 root = os.environ.get("ROOT_DIR", "")
@@ -49,7 +54,7 @@ PY
 )
 
 should_rebuild=0
-for path in "${EDITED_PATHS[@]:-}"; do
+for path in "${EDITED_PATHS[@]+"${EDITED_PATHS[@]}"}"; do
   [[ -z "$path" ]] && continue
   case "$path" in
     "$ROOT"/PhotoViewer/*|"$ROOT"/PhotoViewerTests/*|"$ROOT"/project.yml|"$ROOT"/PhotoViewer.xcodeproj/*)
@@ -65,6 +70,23 @@ fi
 
 date +%s >"$TRIGGER_FILE"
 chmod +x "$WORKER" 2>/dev/null || true
-"$WORKER" >>"$LOG_FILE" 2>&1 &
+# Double-fork into a new session so the build survives the hook process exiting.
+python3 - "$WORKER" "$LOG_FILE" <<'PY'
+import os, sys
+worker, log = sys.argv[1], sys.argv[2]
+if os.fork() > 0:
+    os._exit(0)
+os.setsid()
+if os.fork() > 0:
+    os._exit(0)
+fd = os.open(log, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
+os.dup2(fd, 1)
+os.dup2(fd, 2)
+os.close(fd)
+devnull = os.open("/dev/null", os.O_RDONLY)
+os.dup2(devnull, 0)
+os.close(devnull)
+os.execv(worker, [worker])
+PY
 
 exit 0

@@ -10,6 +10,8 @@ final class LibraryViewModel {
     var visiblePaths: [String] = []
     var groupBy: LibraryGroupBy = .none
     var selectedSidebarKey: String?
+    /// Draws the filtered person's face while moving between photos.
+    var highlightsFilteredFace = false
     var selectedAlbumId: String?
     var metadataFilter = MetadataFilter()
     /// File extensions in the index (`ext`, count), sorted.
@@ -18,6 +20,7 @@ final class LibraryViewModel {
     var selectedMediaExtensions: Set<String> = []
     var photoSort: LibraryPhotoSort = .dateNewest
     var categoryDetectionOn = false
+    var objectDetectionOn = false
     var analyzeFacesOn = false
     var isSelectingPhotos = false
     var selectedPaths: Set<String> = []
@@ -26,11 +29,21 @@ final class LibraryViewModel {
 
     /// Auto-detected semantic categories for the chip row (not created as albums until pinned).
     var detectedCategories: [(title: String, count: Int, rule: SmartAlbumRule)] = []
+    /// Photos that contain the face the user framed. Nil when that search is off.
+    var faceMatchPaths: [String]?
+    private var faceMatchToken = 0
+    /// Bumps when a looked-up person's photo list changes so the grid reloads.
+    private var lookedUpMemberToken = 0
+    private var faceSearchGeneration = 0
+    private var faceSearchTask: Task<Void, Never>?
     var analysisStaleHint: AnalysisStaleHint?
     private var analysisStaleBannerSuppressed = false
     var sidebarYears: [(year: String, count: Int)] = []
     var sidebarPlaces: [(name: String, count: Int)] = []
     var sidebarCameras: [(name: String, count: Int)] = []
+    var sidebarObjects: [(name: String, count: Int)] = []
+    /// Free-text object search. Matches any detected name that contains this text.
+    var objectSearchText = ""
     var sidebarScreenshotCount = 0
     /// Child folders under sources that contain photos. Empty until the index is loaded.
     var sourceFolders: [SourceFolderNode] = []
@@ -58,6 +71,8 @@ final class LibraryViewModel {
     private var catalogTask: Task<Void, Never>?
     private var analysisTask: Task<Void, Never>?
     private var openingIndexTask: Task<Void, Never>?
+    /// Bumped on appear and on close so a transient disappear does not cancel a visible library.
+    private var sessionToken = 0
     private var visiblePathsReloadToken = 0
     private var appliedVisiblePathsQueryFingerprint: String?
     private var generation = 0
@@ -70,10 +85,14 @@ final class LibraryViewModel {
     }
 
     func onAppear() {
+        sessionToken += 1
+        let token = sessionToken
         Task(priority: .userInitiated) {
             await Task.yield()
+            guard token == sessionToken else { return }
             startIfNeeded()
             await Task.yield()
+            guard token == sessionToken else { return }
             normalizeFavoritesAlbum()
         }
     }
@@ -119,6 +138,16 @@ final class LibraryViewModel {
     }
 
     func close() {
+        sessionToken += 1
+        let token = sessionToken
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard token == sessionToken else { return }
+            self.haltLibraryWork()
+        }
+    }
+
+    private func haltLibraryWork() {
         generation += 1
         let priorCatalog = catalogTask
         let priorAnalysis = analysisTask
@@ -142,8 +171,10 @@ final class LibraryViewModel {
             let store = try await Task.detached(priority: .userInitiated) {
                 try PhotoIndexStore(projectId: projectId)
             }.value
-            guard !Task.isCancelled else { return }
             index = store
+            _ = resolvedSources()
+            await reloadVisiblePaths()
+            await refreshSidebarBuckets()
         } catch {
             activity.errorMessage = error.localizedDescription
         }
@@ -243,6 +274,7 @@ final class LibraryViewModel {
         sidebarYears = (try? await store.groupByYear()) ?? []
         sidebarPlaces = ((try? await store.groupByPlace()) ?? []).filter { $0.count > 0 }
         sidebarCameras = ((try? await store.groupByCamera()) ?? []).filter { $0.count > 0 }
+        sidebarObjects = (try? await store.groupByObject()) ?? []
         if let counts = try? await store.sidebarCounts() {
             sidebarScreenshotCount = counts.screenshots
         }
@@ -287,14 +319,181 @@ final class LibraryViewModel {
     }
 
     var isAnalysisRunning: Bool {
-        activity.isMetadataing || activity.isAnalyzing || activity.isFaceProcessing || activity.isGeocoding
+        activity.isMetadataing
+            || activity.isAnalyzing
+            || activity.isFaceProcessing
+            || activity.isSearchingFaces
+            || activity.isGeocoding
     }
 
     var canStartAnalysis: Bool {
-        (categoryDetectionOn || analyzeFacesOn)
+        (categoryDetectionOn || objectDetectionOn || analyzeFacesOn)
             && !isAnalysisRunning
             && !activity.isCataloging
             && index != nil
+    }
+
+    var lookedUpPeople: [PersonGroup] {
+        project.personGroups
+            .filter(\.isLookedUp)
+            .sorted { lhs, rhs in
+                if lhs.memberPhotoPaths.count != rhs.memberPhotoPaths.count {
+                    return lhs.memberPhotoPaths.count > rhs.memberPhotoPaths.count
+                }
+                return lhs.id < rhs.id
+            }
+    }
+
+    /// Adds the framed face under Filter and selects it, then scans the library.
+    @discardableResult
+    func pinLookedUpFace(image: CGImage, sourcePath: String) -> String {
+        let id = UUID().uuidString
+        let crop = FaceThumbnailWriter.save(cgImage: image, groupId: id)
+        var members: [String] = []
+        if !sourcePath.isEmpty { members.append(sourcePath) }
+        project.personGroups.append(
+            PersonGroup(
+                id: id,
+                displayName: nil,
+                memberPhotoPaths: members,
+                thumbnailPath: sourcePath.isEmpty ? nil : sourcePath,
+                faceCropPath: crop,
+                isLookedUp: true
+            )
+        )
+        projects.update(project)
+        groupBy = .none
+        selectedAlbumId = nil
+        faceMatchPaths = nil
+        selectedSidebarKey = "person:\(id)"
+        appliedVisiblePathsQueryFingerprint = nil
+        scheduleReloadVisiblePaths()
+        return id
+    }
+
+    func beginFaceSearch(embedding: FaceEmbedding, face: CGImage, sourcePath: String) {
+        faceSearchTask?.cancel()
+        faceSearchGeneration += 1
+        let generation = faceSearchGeneration
+        let personId = pinLookedUpFace(image: face, sourcePath: sourcePath)
+        activity.isSearchingFaces = true
+        activity.faceSearchDone = 0
+        activity.faceSearchTotal = 0
+        activity.errorMessage = nil
+        faceSearchTask = Task {
+            await runFaceSearch(
+                embedding: embedding,
+                generation: generation,
+                personId: personId,
+                sourcePath: sourcePath
+            )
+        }
+    }
+
+    func cancelFaceSearch() {
+        faceSearchTask?.cancel()
+        faceSearchTask = nil
+        faceSearchGeneration += 1
+        faceMatchPaths = nil
+        activity.isSearchingFaces = false
+        activity.faceSearchDone = 0
+        activity.faceSearchTotal = 0
+    }
+
+    private func runFaceSearch(
+        embedding: FaceEmbedding,
+        generation: Int,
+        personId: String,
+        sourcePath: String
+    ) async {
+        let paths = (try? await index?.allPaths()) ?? []
+        activity.faceSearchTotal = paths.count
+        var matches: [String] = sourcePath.isEmpty ? [] : [sourcePath]
+        for (offset, path) in paths.enumerated() {
+            if Task.isCancelled || generation != faceSearchGeneration {
+                await finishLookedUpSearch(personId: personId, matches: matches, generation: generation)
+                return
+            }
+            if path != sourcePath {
+                let matched = await Task.detached(priority: .utility) {
+                    autoreleasepool { () -> Bool in
+                        for face in FaceAlignment.alignedFaces(from: URL(fileURLWithPath: path)) {
+                            guard let candidate = AdaFaceEmbedder.embedding(forAlignedFace: face.image) else { continue }
+                            if candidate.cosineSimilarity(to: embedding) >= FaceEmbedding.samePersonCosine {
+                                return true
+                            }
+                        }
+                        return false
+                    }
+                }.value
+                if matched { matches.append(path) }
+            }
+            activity.faceSearchDone = offset + 1
+            if matches.count % 25 == 0 {
+                publishLookedUpMatches(personId: personId, matches: matches, persist: false)
+            }
+        }
+        await finishLookedUpSearch(personId: personId, matches: matches, generation: generation)
+    }
+
+    private func publishLookedUpMatches(personId: String, matches: [String], persist: Bool) {
+        guard let index = project.personGroups.firstIndex(where: { $0.id == personId }) else { return }
+        project.personGroups[index].memberPhotoPaths = uniquePaths(matches)
+        lookedUpMemberToken += 1
+        if persist { projects.update(project) }
+        if selectedSidebarKey == "person:\(personId)" {
+            appliedVisiblePathsQueryFingerprint = nil
+            scheduleReloadVisiblePaths()
+        }
+    }
+
+    private func finishLookedUpSearch(personId: String, matches: [String], generation: Int) async {
+        guard project.personGroups.contains(where: { $0.id == personId }) else { return }
+        let paths = uniquePaths(matches)
+        if let index = project.personGroups.firstIndex(where: { $0.id == personId }) {
+            project.personGroups[index].memberPhotoPaths = paths
+        }
+        projects.update(project)
+        await tagLookedUpPerson(personId, paths: paths)
+        guard generation == faceSearchGeneration else { return }
+        activity.isSearchingFaces = false
+        lookedUpMemberToken += 1
+        if selectedSidebarKey == "person:\(personId)" {
+            appliedVisiblePathsQueryFingerprint = nil
+            await reloadVisiblePaths()
+        }
+    }
+
+    private func uniquePaths(_ paths: [String]) -> [String] {
+        var seen = Set<String>()
+        return paths.filter { seen.insert($0).inserted }
+    }
+
+    private func tagLookedUpPerson(_ personId: String, paths: [String]) async {
+        guard let store = index else { return }
+        for path in paths {
+            guard let record = try? await store.record(for: path) else { continue }
+            var ids = record.personGroupIds
+            if !ids.contains(personId) { ids.append(personId) }
+            try? await store.updatePersonGroups(path: path, groupIds: ids)
+        }
+    }
+
+    /// Keeps framed-face people when a later Faces run rebuilds clusters.
+    private func mergingLookedUpPeople(into groups: [PersonGroup]) -> [PersonGroup] {
+        let lookedUp = project.personGroups.filter(\.isLookedUp)
+        guard !lookedUp.isEmpty else { return groups }
+        var merged = groups
+        for person in lookedUp {
+            if let index = merged.firstIndex(where: { $0.id == person.id }) {
+                merged[index].isLookedUp = true
+                if merged[index].faceCropPath == nil { merged[index].faceCropPath = person.faceCropPath }
+                if (merged[index].displayName ?? "").isEmpty { merged[index].displayName = person.displayName }
+            } else {
+                merged.append(person)
+            }
+        }
+        return merged
     }
 
     func startAnalysis() {
@@ -302,9 +501,47 @@ final class LibraryViewModel {
         Task { await runAnalysisIfNeeded(generation: generation) }
     }
 
+    /// Removes categories, suggested titles, and people. Photos, albums, and notes stay.
+    func clearAnalysisData() {
+        guard !isAnalysisRunning else { return }
+        let crops = project.personGroups.compactMap(\.faceCropPath)
+        project.personGroups = []
+        project.annotations = project.annotations.compactMap { annotation in
+            var kept = annotation
+            kept.suggestedTitle = nil
+            let hasNote = !kept.place.isEmpty || !kept.items.isEmpty || !kept.faces.isEmpty
+            return hasNote ? kept : nil
+        }
+        project.analysisCheckpoint = nil
+        projects.update(project)
+        peopleMergeSelection.removeAll()
+        isCombiningPeople = false
+        detectedCategories = []
+        objectSearchText = ""
+        analysisStaleHint = nil
+        if let key = selectedSidebarKey,
+           key.hasPrefix("person:") || key.hasPrefix("semantic:") || key.hasPrefix("object:") {
+            selectedSidebarKey = nil
+        }
+
+        Task {
+            if let index {
+                try? await index.clearAnalysis()
+            }
+            for crop in crops {
+                try? FileManager.default.removeItem(atPath: crop)
+            }
+            await reloadVisiblePaths()
+            await refreshSidebarBuckets()
+            await loadDetectedCategories()
+            await refreshAnalysisStaleHint()
+        }
+    }
+
     func stopAnalysis() {
         analysisTask?.cancel()
         analysisTask = nil
+        cancelFaceSearch()
         Task { await analysis.setPaused(false) }
         activity.isMetadataing = false
         activity.isAnalyzing = false
@@ -561,6 +798,12 @@ final class LibraryViewModel {
         !filterBannerDescriptions.isEmpty
     }
 
+    var filteredPersonId: String? {
+        guard let key = selectedSidebarKey, key.hasPrefix("person:") else { return nil }
+        let id = String(key.dropFirst("person:".count))
+        return id.isEmpty ? nil : id
+    }
+
     var hasNarrowedGrid: Bool {
         if groupBy == .albums, selectedAlbumId != nil { return true }
         if let key = selectedSidebarKey, !key.isEmpty { return true }
@@ -573,17 +816,31 @@ final class LibraryViewModel {
         filterBannerDescriptions.joined(separator: " · ")
     }
 
-    /// Shown in the bottom filter banner (category chips & delete bin have their own affordances).
+    /// Shown in the bottom filter banner. The delete bin has its own bar.
     var filterBannerDescriptions: [String] {
-        gridFilterDescriptionParts(includeCategoryChips: false, includeDeleteBin: false)
+        gridFilterDescriptionParts(includeCategoryChips: true, includeDeleteBin: false)
     }
 
     var activeFilterDescriptions: [String] {
         gridFilterDescriptionParts(includeCategoryChips: true, includeDeleteBin: true)
     }
 
+    var filteredSidebarObjects: [(name: String, count: Int)] {
+        let query = objectSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return Array(sidebarObjects.prefix(40)) }
+        return sidebarObjects.filter { $0.name.localizedStandardContains(query) }
+    }
+
     private func gridFilterDescriptionParts(includeCategoryChips: Bool, includeDeleteBin: Bool) -> [String] {
         var parts: [String] = []
+        let objectQuery = objectSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !objectQuery.isEmpty, selectedSidebarKey?.hasPrefix("object:") != true {
+            parts.append("Objects matching “\(objectQuery)”")
+        }
+        if let matches = faceMatchPaths {
+            let noun = matches.count == 1 ? "photo" : "photos"
+            parts.append("Face search: \(matches.count) \(noun)")
+        }
 
         if groupBy == .albums, let id = selectedAlbumId,
            let album = project.albums.first(where: { $0.id == id }) {
@@ -609,6 +866,8 @@ final class LibraryViewModel {
             case let key where key.hasPrefix("date:"):
                 let year = String(key.dropFirst("date:".count))
                 parts.append("Year: \(year)")
+            case let key where key.hasPrefix("object:"):
+                parts.append("Object: \(String(key.dropFirst("object:".count)))")
             case let key where key.hasPrefix("semantic:"):
                 if includeCategoryChips {
                     parts.append("Category: \(String(key.dropFirst("semantic:".count)))")
@@ -683,6 +942,9 @@ final class LibraryViewModel {
     }
 
     func resetAllViewFilters() {
+        cancelFaceSearch()
+        highlightsFilteredFace = false
+        objectSearchText = ""
         groupBy = .none
         selectedAlbumId = nil
         selectedSidebarKey = nil
@@ -734,6 +996,10 @@ final class LibraryViewModel {
         do {
             var paths = try await visiblePathQuery(store: store)
             paths = await filterPathsBySelectedMediaTypes(paths)
+            if let matches = faceMatchPaths {
+                let allowed = Set(matches)
+                paths = paths.filter { allowed.contains($0) }
+            }
             visiblePaths = paths
             appliedVisiblePathsQueryFingerprint = fingerprint
         } catch {
@@ -751,6 +1017,7 @@ final class LibraryViewModel {
             groupBy.rawValue,
             selectedAlbumId ?? "",
             selectedSidebarKey ?? "",
+            objectSearchText,
             photoSort.rawValue,
             media,
             after,
@@ -760,6 +1027,8 @@ final class LibraryViewModel {
             project.filter.excludedExtensions.joined(separator: "|"),
             project.deleteBinPaths.joined(separator: "|"),
             usesFolderBrowsing ? "folders" : "all",
+            faceMatchPaths == nil ? "" : "face:\(faceMatchToken)",
+            "lookedUp:\(lookedUpMemberToken)",
         ].joined(separator: "\u{1e}")
     }
 
@@ -827,6 +1096,12 @@ final class LibraryViewModel {
             extra = try await sidebarFilter(key: key, store: store, current: extra)
         }
 
+        let objectQuery = objectSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !objectQuery.isEmpty, selectedSidebarKey?.hasPrefix("object:") != true {
+            let matches = Set(try await store.pathsMatchingObject(query: objectQuery, exact: false))
+            extra = extra.map { $0.intersection(matches) } ?? matches
+        }
+
         if !metadataFilter.personQuery.isEmpty {
             extra = try await filterByPersonName(
                 query: metadataFilter.personQuery,
@@ -867,6 +1142,10 @@ final class LibraryViewModel {
             if let current { return current.intersection(paths) }
             return paths
         }
+        if key.hasPrefix("object:") {
+            let name = String(key.dropFirst("object:".count))
+            return Set(try await store.pathsMatchingObject(query: name, exact: true))
+        }
         if key.hasPrefix("semantic:") {
             let name = String(key.dropFirst("semantic:".count))
             return Set(try await store.pathsForSmartRules(SmartAlbumRules(conditions: [
@@ -892,9 +1171,11 @@ final class LibraryViewModel {
         }
         if key.hasPrefix("person:") {
             let personId = String(key.dropFirst("person:".count))
-            return Set(try await store.pathsForSmartRules(SmartAlbumRules(conditions: [
+            let indexed = Set(try await store.pathsForSmartRules(SmartAlbumRules(conditions: [
                 SmartAlbumRule(type: .personGroupId, value: personId),
             ])))
+            let members = Set(project.personGroups.first { $0.id == personId }?.memberPhotoPaths ?? [])
+            return indexed.union(members)
         }
         if key.hasPrefix("source:") {
             let prefix = String(key.dropFirst("source:".count))
@@ -919,8 +1200,8 @@ final class LibraryViewModel {
     }
 
     private func runAnalysisIfNeeded(generation: Int) async {
-        guard categoryDetectionOn || analyzeFacesOn else {
-            activity.errorMessage = "Turn on Categories and/or Faces, then click Run."
+        guard categoryDetectionOn || objectDetectionOn || analyzeFacesOn else {
+            activity.errorMessage = "Turn on Categories, Objects, and/or Faces, then click Run."
             return
         }
         guard let store = index else { return }
@@ -928,7 +1209,8 @@ final class LibraryViewModel {
         guard !paths.isEmpty else { return }
 
         activity.isMetadataing = true
-        activity.isAnalyzing = categoryDetectionOn
+        activity.isAnalyzing = categoryDetectionOn || objectDetectionOn
+        activity.analysisTitle = objectDetectionOn && !categoryDetectionOn ? "Finding objects…" : "Analyzing…"
         activity.isFaceProcessing = false
         activity.metadataTotal = paths.count
         activity.analyzeTotal = paths.count
@@ -941,6 +1223,7 @@ final class LibraryViewModel {
                 paths: paths,
                 semanticOn: categoryDetectionOn,
                 smartTitlesOn: categoryDetectionOn,
+                objectsOn: objectDetectionOn,
                 facesOn: analyzeFacesOn,
                 index: store,
                 placeService: placeService,
@@ -978,7 +1261,7 @@ final class LibraryViewModel {
                 },
                 onPersonGroups: { @MainActor [weak self] groups in
                     guard let self, generation == self.generation else { return }
-                    self.project.personGroups = groups
+                    self.project.personGroups = self.mergingLookedUpPeople(into: groups)
                     self.projects.update(self.project)
                 },
                 onSmartTitle: { @MainActor [weak self] path, title in
@@ -1027,7 +1310,7 @@ final class LibraryViewModel {
         }
 
         guard let checkpoint = project.analysisCheckpoint else {
-            guard categoryDetectionOn || analyzeFacesOn else {
+            guard categoryDetectionOn || objectDetectionOn || analyzeFacesOn else {
                 analysisStaleHint = nil
                 return
             }
@@ -1083,6 +1366,9 @@ final class LibraryViewModel {
         }
         if record.isScreenshot, !categories.contains("Screenshots") {
             categories.append("Screenshots")
+        }
+        for name in record.objectLabels where !categories.contains(name) {
+            categories.append(name)
         }
         return categories
     }
@@ -1195,12 +1481,12 @@ final class LibraryViewModel {
         }
     }
 
-    func exportSelectedAlbum() {
+    @discardableResult
+    func exportSelectedAlbum() -> Bool {
         guard let albumId = selectedAlbumId,
               let album = project.albums.first(where: { $0.id == albumId })
         else {
-            activity.errorMessage = "Select an album to export."
-            return
+            return false
         }
 
         Task {
@@ -1235,6 +1521,7 @@ final class LibraryViewModel {
                 activity.errorMessage = error.localizedDescription
             }
         }
+        return true
     }
 
     func renamePerson(id: String, name: String) {
@@ -1409,6 +1696,72 @@ final class LibraryViewModel {
             selectedSidebarKey = "person:\(primaryId)"
         }
         await reloadVisiblePaths()
+    }
+
+    /// Faces of the person currently chosen in People or the left filter.
+    func highlightedFaces(on path: String) async -> [FaceAlignment.AlignedFace] {
+        guard highlightsFilteredFace, let personId = filteredPersonId,
+              let person = project.personGroups.first(where: { $0.id == personId })
+        else { return [] }
+        let faces = FaceAlignment.alignedFaces(from: URL(fileURLWithPath: path))
+        guard !faces.isEmpty else { return [] }
+        var embeddings: [UUID: FaceEmbedding] = [:]
+        for face in faces {
+            embeddings[face.id] = AdaFaceEmbedder.embedding(forAlignedFace: face.image)
+        }
+        let matches = FaceNameMatcher.matchingFaceIDs(
+            faceIDs: faces.map(\.id),
+            faceEmbeddings: embeddings,
+            personEmbedding: embedding(forNamedPerson: person)
+        )
+        return faces.filter { matches.contains($0.id) }
+    }
+
+    /// Names to draw on faces in one photo. Includes people from the top row and the left filter.
+    func faceLabels(for faces: [FaceAlignment.AlignedFace], path: String) async -> [UUID: String] {
+        let people = await namedPeople(on: path)
+        guard !faces.isEmpty, !people.isEmpty else { return [:] }
+        var faceEmbeddings: [UUID: FaceEmbedding] = [:]
+        for face in faces {
+            faceEmbeddings[face.id] = AdaFaceEmbedder.embedding(forAlignedFace: face.image)
+        }
+        let described = people.map { person in
+            (name: person.name, embedding: embedding(forNamedPerson: person.group))
+        }
+        return FaceNameMatcher.labels(
+            faceIDs: faces.map(\.id),
+            faceEmbeddings: faceEmbeddings,
+            people: described
+        )
+    }
+
+    private func namedPeople(on path: String) async -> [(name: String, group: PersonGroup)] {
+        var ids = Set(project.personGroups.filter { $0.memberPhotoPaths.contains(path) }.map(\.id))
+        if let record = try? await index?.record(for: path) {
+            ids.formUnion(record.personGroupIds)
+        }
+        return project.personGroups.compactMap { group in
+            guard ids.contains(group.id) else { return nil }
+            let name = group.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            guard !name.isEmpty else { return nil }
+            return (name, group)
+        }
+    }
+
+    private func embedding(forNamedPerson person: PersonGroup) -> FaceEmbedding? {
+        let paths = [person.faceCropPath, person.thumbnailPath, person.memberPhotoPaths.first].compactMap { $0 }
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            if let face = FaceAlignment.preferredThumbnail(from: url),
+               let embedding = AdaFaceEmbedder.embedding(forAlignedFace: face) {
+                return embedding
+            }
+            if let image = FaceCropExtractor.loadCGImage(url: url, maxPixel: 512),
+               let embedding = AdaFaceEmbedder.embedding(forAlignedFace: image) {
+                return embedding
+            }
+        }
+        return nil
     }
 
     func faceChipImage(for person: PersonGroup) async -> NSImage? {

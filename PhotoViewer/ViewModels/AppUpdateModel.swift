@@ -113,7 +113,7 @@ final class AppUpdateModel {
         self?.downloadProgress = fraction
       }
       installPhase = .installing
-      try AppUpdateInstaller.install(zipURL: zipURL)
+      try await AppUpdateInstaller.install(zipURL: zipURL)
     } catch {
       installPhase = .failed(error.localizedDescription)
     }

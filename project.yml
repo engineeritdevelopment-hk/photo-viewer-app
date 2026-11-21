@@ -12,8 +12,6 @@ targets:
   PhotoViewer:
     type: application
     platform: macOS
-    sources:
-      - path: PhotoViewer
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.photoviewer.app
@@ -22,22 +20,35 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         ENABLE_TESTABILITY: YES
         GENERATE_INFOPLIST_FILE: YES
-        MARKETING_VERSION: "1.1.0"
-        CURRENT_PROJECT_VERSION: "4"
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "5"
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.photography
         INFOPLIST_KEY_PhotoViewerGitHubRepository: engineeritdevelopment-hk/photo-viewer-app
+    sources:
+      - path: PhotoViewer
+        excludes:
+          - "Resources/AdaFace.mlmodelc/**"
+          - "Resources/ObjectDetector.mlmodelc/**"
+      - path: PhotoViewer/Resources/AdaFace.mlmodelc
+        buildPhase: resources
+        type: folder
+      - path: PhotoViewer/Resources/ObjectDetector.mlmodelc
+        buildPhase: resources
+        type: folder
     dependencies:
       - target: PhotoViewerInstallHelper
         embed: true
+        codeSign: true
     entitlements:
       path: PhotoViewer/PhotoViewer.entitlements
       properties:
         com.apple.security.app-sandbox: true
+        com.apple.security.network.client: true
         com.apple.security.files.user-selected.read-write: true
         com.apple.security.files.bookmarks.app-scope: true
   PhotoViewerInstallHelper:
-    type: tool
+    type: application
     platform: macOS
     sources:
       - path: PhotoViewerInstallHelper
@@ -45,6 +56,9 @@ targets:
       base:
         PRODUCT_NAME: PhotoViewerInstallHelper
         PRODUCT_BUNDLE_IDENTIFIER: com.photoviewer.install-helper
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_CFBundleName: PhotoViewerInstallHelper
         SKIP_INSTALL: NO
         ENABLE_HARDENED_RUNTIME: YES
   PhotoViewerTests:

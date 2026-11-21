@@ -6,13 +6,17 @@ enum FaceCropExtractor {
     /// Extra margin around Vision face bounds (fraction of face width/height per side).
     private static let cropPaddingRatio: CGFloat = 0.32
 
-    static func loadCGImage(url: URL, maxPixel: Int = 1280) -> CGImage? {
+    static func loadCGImage(url: URL, maxPixel: Int = 1024) -> CGImage? {
         guard FileManager.default.isReadableFile(atPath: url.path) else { return nil }
-        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let sourceOptions: [CFString: Any] = [
+            kCGImageSourceShouldCache: false,
+        ]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceThumbnailMaxPixelSize: maxPixel,
             kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: false,
         ]
         return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }

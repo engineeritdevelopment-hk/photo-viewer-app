@@ -22,7 +22,7 @@ enum AppUpdateInstallError: LocalizedError {
 }
 
 enum AppUpdateInstaller {
-  static func install(zipURL: URL) throws {
+  static func install(zipURL: URL) async throws {
     let fileManager = FileManager.default
     let workRoot = ApplicationPaths.updateStaging
     if fileManager.fileExists(atPath: workRoot.path) {
@@ -38,27 +38,42 @@ enum AppUpdateInstaller {
       throw AppUpdateInstallError.appBundleNotFound
     }
 
-    guard let helper = installHelperURL() else {
+    guard let bundledHelper = installHelperURL() else {
       throw AppUpdateInstallError.helperMissing
     }
 
-    let process = Process()
-    process.executableURL = helper
-    process.arguments = [
-      "--install", appBundle.path,
-      "--to", Bundle.main.bundleURL.path,
-      "--wait-for", "\(ProcessInfo.processInfo.processIdentifier)",
-    ]
+    // Launch the helper that is already inside this app. A copy stored in the
+    // sandbox container is rejected by Launch Services. Arguments are dropped
+    // too, so the paths are written to a file the helper knows how to find.
+    try writeInstallRequest(
+      source: appBundle,
+      destination: Bundle.main.bundleURL,
+      parentPID: ProcessInfo.processInfo.processIdentifier,
+      at: workRoot.appendingPathComponent("install-request.txt")
+    )
 
-    do {
-      try process.run()
-    } catch {
-      throw AppUpdateInstallError.helperLaunchFailed(error.localizedDescription)
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = false
+    configuration.createsNewApplicationInstance = true
+
+    try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+      NSWorkspace.shared.openApplication(at: bundledHelper, configuration: configuration) { _, error in
+        if let error {
+          continuation.resume(throwing: AppUpdateInstallError.helperLaunchFailed(error.localizedDescription))
+        } else {
+          continuation.resume()
+        }
+      }
     }
 
-    Task { @MainActor in
-      NSApp.terminate(nil)
-    }
+    // The helper waits for this process to exit, then replaces the bundle.
+    // terminate() can stall while this sheet is open, so leave immediately.
+    exit(0)
+  }
+
+  private static func writeInstallRequest(source: URL, destination: URL, parentPID: Int32, at url: URL) throws {
+    let text = "\(parentPID)\n\(source.path)\n\(destination.path)\n"
+    try Data(text.utf8).write(to: url, options: .atomic)
   }
 
   private static func unzipArchive(at zipURL: URL, to destination: URL) throws {
@@ -74,18 +89,13 @@ enum AppUpdateInstaller {
 
   private static func installHelperURL() -> URL? {
     let bundle = Bundle.main
-    if let auxiliary = bundle.url(forAuxiliaryExecutable: "PhotoViewerInstallHelper") {
-      return auxiliary
-    }
-    if let inResources = bundle.url(forResource: "PhotoViewerInstallHelper", withExtension: nil) {
-      return inResources
-    }
-    let candidate = bundle.bundleURL
-      .appendingPathComponent("Contents/MacOS/PhotoViewerInstallHelper")
-    if FileManager.default.fileExists(atPath: candidate.path) {
-      return candidate
-    }
-    return nil
+    let candidates = [
+      bundle.bundleURL.appendingPathComponent("Contents/Resources/PhotoViewerInstallHelper.app"),
+      bundle.bundleURL.appendingPathComponent("Contents/Library/LoginItems/PhotoViewerInstallHelper.app"),
+      bundle.bundleURL.appendingPathComponent("Contents/Helpers/PhotoViewerInstallHelper.app"),
+      bundle.bundleURL.appendingPathComponent("Contents/MacOS/PhotoViewerInstallHelper.app"),
+    ]
+    return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
   }
 
   private static func findApplicationBundle(in root: URL) -> URL? {

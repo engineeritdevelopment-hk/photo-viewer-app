@@ -21,6 +21,7 @@ struct ActivityBanner: View {
             || activity.isMetadataing
             || activity.isAnalyzing
             || activity.isFaceProcessing
+            || activity.isSearchingFaces
             || activity.isGeocoding
             || activity.isExporting
             || activity.errorMessage != nil
@@ -50,7 +51,7 @@ struct ActivityBanner: View {
             }
             if activity.isAnalyzing {
                 line(
-                    title: "Analyzing…",
+                    title: activity.analysisTitle,
                     done: activity.analyzed,
                     total: activity.analyzeTotal,
                     eta: analyzeETALabel,
@@ -63,6 +64,15 @@ struct ActivityBanner: View {
                     done: activity.facesProcessed,
                     total: activity.faceTotal,
                     eta: facesETALabel,
+                    secondary: nil
+                )
+            }
+            if activity.isSearchingFaces {
+                line(
+                    title: "Searching photos for this face…",
+                    done: activity.faceSearchDone,
+                    total: activity.faceSearchTotal,
+                    eta: nil,
                     secondary: nil
                 )
             }

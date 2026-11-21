@@ -31,14 +31,49 @@ enum SemanticFolders {
         "Archives": ["archive", "zip", "backup", "compressed"],
         "Installers": ["install", "setup", "dmg", "package"],
         "Code": ["code", "swift", "python", "script", "developer", "git"],
+        "Events": [
+            "wedding", "ceremony", "celebration", "party", "festival", "concert", "parade",
+            "banquet", "bouquet",
+        ],
+        "Nature": [
+            "plant", "flower", "tree", "animal", "bird", "dog", "cat", "landscape", "mountain",
+            "beach", "ocean", "sky", "sunset", "wildlife",
+        ],
+        "Places": [
+            "building", "structure", "architecture", "cityscape", "skyline", "temple", "church",
+            "bridge", "room",
+        ],
+        "People": [
+            "people", "person", "adult", "child", "baby", "portrait", "crowd", "bride", "groom",
+            "face", "suit", "gown", "kimono",
+        ],
+    ]
+
+    /// Specific scenes win over generic ones. Dictionary order is not reliable.
+    static let matchPriority: [String] = [
+        "Finance & Receipts",
+        "Travel & Tickets",
+        "Work & Projects",
+        "Study & Notes",
+        "Code",
+        "Archives",
+        "Installers",
+        "Food",
+        "Events",
+        "Nature",
+        "Places",
+        "People",
+        "Screenshots",
+        "Media",
     ]
 
     static let defaultFolder = "Other"
 
-    /// First anchor folder whose keyword appears in `text` (case-insensitive substring).
+    /// First priority folder whose keyword appears in `text` (case-insensitive substring).
     static func matchCategory(in text: String) -> String? {
         let lowered = text.lowercased()
-        for (folder, keywords) in anchors {
+        for folder in matchPriority {
+            guard let keywords = anchors[folder] else { continue }
             if keywords.contains(where: { lowered.contains($0) }) {
                 return folder
             }

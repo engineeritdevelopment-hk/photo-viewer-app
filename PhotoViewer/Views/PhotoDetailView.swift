@@ -4,7 +4,7 @@ import SwiftUI
 struct PhotoDetailView: View {
     @Binding var path: String
     let paths: [String]
-    var model: LibraryViewModel
+    @Bindable var model: LibraryViewModel
     var onClose: () -> Void
 
     @State private var image: NSImage?
@@ -18,6 +18,11 @@ struct PhotoDetailView: View {
     @FocusState private var keysFocused: Bool
     @State private var showLocationMap = false
     @State private var photoCategories: [String] = []
+    @State private var isFramingFace = false
+    @State private var framingFaces: [FaceAlignment.AlignedFace] = []
+    @State private var faceLabels: [UUID: String] = [:]
+    @State private var highlightedFaces: [FaceAlignment.AlignedFace] = []
+    @State private var frameHint: String?
 
     private let room = Color(red: 0.11, green: 0.14, blue: 0.19)
     private let chromeIdleDelay: Duration = .milliseconds(750)
@@ -40,7 +45,6 @@ struct PhotoDetailView: View {
                     .resizable()
                     .scaledToFit()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(metadataExpanded ? 12 : 8)
                     .contentShape(Rectangle())
                     .background {
                         ScrollWheelHandler { delta in
@@ -48,7 +52,7 @@ struct PhotoDetailView: View {
                         }
                     }
                     .onTapGesture {
-                        if metadataExpanded {
+                        if isFramingFace || metadataExpanded {
                             return
                         }
                         if chromeVisible {
@@ -59,6 +63,27 @@ struct PhotoDetailView: View {
                             revealChromeBriefly()
                         }
                     }
+                    .overlay {
+                        if isFramingFace {
+                            FaceFrameOverlay(
+                                imageSize: image.size,
+                                faces: framingFaces,
+                                names: faceLabels,
+                                onSelect: useFramedFace,
+                                onFrame: frameAndSearch
+                            )
+                        } else if model.highlightsFilteredFace, !highlightedFaces.isEmpty {
+                            FaceFrameOverlay(
+                                imageSize: image.size,
+                                faces: highlightedFaces,
+                                names: highlightedFaceNames,
+                                allowsInteraction: false,
+                                onSelect: { _ in },
+                                onFrame: { _ in }
+                            )
+                        }
+                    }
+                    .padding(metadataExpanded ? 12 : 8)
             } else if isLoading {
                 ProgressView("Loading photo…")
                     .tint(.white)
@@ -69,7 +94,7 @@ struct PhotoDetailView: View {
                 topChrome
                     .offset(y: topChromeOffset)
                     .opacity(topChromeOpacity)
-                    .allowsHitTesting(chromeVisible || metadataExpanded)
+                    .allowsHitTesting(chromeVisible || metadataExpanded || isFramingFace)
                 Spacer(minLength: 0)
                 bottomChrome
                     .offset(y: bottomChromeOffset)
@@ -82,6 +107,17 @@ struct PhotoDetailView: View {
             PointerActivityTracker(onActivity: notePointerActivity)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .allowsHitTesting(false)
+
+            if isFramingFace {
+                Text(frameHint ?? "Tap a face, or drag a box around one.")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .padding(.bottom, 72)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+            }
         }
         .onAppear { scheduleChromeAutoHide() }
         .focusable()
@@ -111,7 +147,18 @@ struct PhotoDetailView: View {
             }
         }
         .task(id: path) {
+            isFramingFace = false
+            framingFaces = []
+            faceLabels = [:]
+            frameHint = nil
             await loadForCurrentPath()
+            await refreshPersonHighlight()
+        }
+        .onChange(of: model.highlightsFilteredFace) { _, _ in
+            Task { await refreshPersonHighlight() }
+        }
+        .onChange(of: model.filteredPersonId) { _, _ in
+            Task { await refreshPersonHighlight() }
         }
         .sheet(isPresented: $showLocationMap) {
             if let coordinate = photoCoordinate {
@@ -177,7 +224,7 @@ struct PhotoDetailView: View {
         Task {
             try? await Task.sleep(for: chromeIdleDelay)
             await MainActor.run {
-                guard generation == chromeIdleGeneration, !metadataExpanded else { return }
+                guard generation == chromeIdleGeneration, !metadataExpanded, !isFramingFace else { return }
                 chromeVisible = false
             }
         }
@@ -214,6 +261,17 @@ struct PhotoDetailView: View {
             }
 
             Spacer(minLength: 8)
+
+            Button {
+                toggleFaceFraming()
+            } label: {
+                Image(systemName: isFramingFace ? "viewfinder.circle.fill" : "person.crop.rectangle")
+                    .symbolRenderingMode(.hierarchical)
+                    .font(.title3)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(isFramingFace ? Color.yellow : .white.opacity(0.85))
+            .help(isFramingFace ? "Stop framing a face" : "Frame a face and find photos of that person")
 
             Button {
                 model.addToDeleteBin(paths: [path])
@@ -403,6 +461,65 @@ struct PhotoDetailView: View {
 
     private func persistAnnotation() {
         model.updateAnnotation(annotation)
+    }
+
+    private var highlightedFaceNames: [UUID: String] {
+        guard let personId = model.filteredPersonId,
+              let person = model.project.personGroups.first(where: { $0.id == personId })
+        else { return [:] }
+        let name = person.displayName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        guard !name.isEmpty else { return [:] }
+        return Dictionary(uniqueKeysWithValues: highlightedFaces.map { ($0.id, name) })
+    }
+
+    private func refreshPersonHighlight() async {
+        guard model.highlightsFilteredFace, model.filteredPersonId != nil else {
+            highlightedFaces = []
+            return
+        }
+        let currentPath = path
+        let faces = await model.highlightedFaces(on: currentPath)
+        guard currentPath == path else { return }
+        highlightedFaces = faces
+    }
+
+    private func toggleFaceFraming() {
+        isFramingFace.toggle()
+        frameHint = nil
+        chromeVisible = true
+        if isFramingFace {
+            metadataExpanded = false
+            Task {
+                let faces = FaceAlignment.alignedFaces(from: URL(fileURLWithPath: path))
+                framingFaces = faces
+                faceLabels = await model.faceLabels(for: faces, path: path)
+                if faces.isEmpty {
+                    frameHint = "No face was detected. Drag a box around the face."
+                }
+            }
+        } else {
+            framingFaces = []
+            faceLabels = [:]
+        }
+    }
+
+    private func useFramedFace(_ face: FaceAlignment.AlignedFace) {
+        guard let embedding = AdaFaceEmbedder.embedding(forAlignedFace: face.image) else {
+            frameHint = "That face could not be read. Try another one."
+            return
+        }
+        model.beginFaceSearch(embedding: embedding, face: face.image, sourcePath: path)
+        onClose()
+    }
+
+    private func frameAndSearch(_ normalizedRect: CGRect) {
+        guard let image = FaceCropExtractor.loadCGImage(url: URL(fileURLWithPath: path), maxPixel: 2048),
+              let face = FaceAlignment.face(framedBy: normalizedRect, among: framingFaces, image: image)
+        else {
+            frameHint = "No face in that box. Drag closer around the face."
+            return
+        }
+        useFramedFace(face)
     }
 
     private func loadForCurrentPath() async {

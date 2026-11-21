@@ -1,7 +1,6 @@
 import Foundation
 
 actor AnalysisPipeline {
-    private let maxConcurrent = 3
     private var paused = false
 
     func setPaused(_ value: Bool) {
@@ -12,6 +11,7 @@ actor AnalysisPipeline {
         paths: [String],
         semanticOn: Bool,
         smartTitlesOn: Bool,
+        objectsOn: Bool,
         facesOn: Bool,
         index: PhotoIndexStore,
         placeService: PlaceLabelService,
@@ -28,17 +28,19 @@ actor AnalysisPipeline {
         let total = paths.count
         var metadataDone = 0
 
+        let limit = (semanticOn || objectsOn) ? 1 : 3
         await withTaskGroup(of: Void.self) { group in
             var active = 0
             var iterator = paths.makeIterator()
 
-            while active < maxConcurrent, let path = iterator.next() {
+            while active < limit, let path = iterator.next() {
                 active += 1
                 group.addTask {
                     await self.processOne(
                         path: path,
                         semanticOn: semanticOn,
                         smartTitlesOn: smartTitlesOn,
+                        objectsOn: objectsOn,
                         index: index,
                         onSmartTitle: onSmartTitle
                     )
@@ -50,7 +52,7 @@ actor AnalysisPipeline {
                 if Task.isCancelled { group.cancelAll(); break }
                 metadataDone += 1
                 await onMetadata(metadataDone, total)
-                if semanticOn {
+                if semanticOn || objectsOn {
                     await onAnalysis(metadataDone, total)
                 }
                 if let path = iterator.next() {
@@ -60,6 +62,7 @@ actor AnalysisPipeline {
                             path: path,
                             semanticOn: semanticOn,
                             smartTitlesOn: smartTitlesOn,
+                            objectsOn: objectsOn,
                             index: index,
                             onSmartTitle: onSmartTitle
                         )
@@ -106,6 +109,7 @@ actor AnalysisPipeline {
         path: String,
         semanticOn: Bool,
         smartTitlesOn: Bool,
+        objectsOn: Bool,
         index: PhotoIndexStore,
         onSmartTitle: @escaping @MainActor (String, String) async -> Void
     ) async {
@@ -141,6 +145,11 @@ actor AnalysisPipeline {
             if smartTitlesOn, let title = analysis.suggestedTitle, !title.isEmpty {
                 await onSmartTitle(path, title)
             }
+        }
+
+        if objectsOn {
+            let names = ObjectDetector.labels(at: url)
+            try? await index.updateObjectLabels(path: path, names: names)
         }
     }
 }

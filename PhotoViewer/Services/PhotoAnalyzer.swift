@@ -33,7 +33,7 @@ enum PhotoAnalyzer {
         #if canImport(FoundationModels)
         if #available(macOS 26.0, *) {
             if semanticGroupingOn,
-               let ai = await FoundationModelsAnalysis.suggest(
+               let ai = await FoundationModelAnalysisGate.shared.suggest(
                 fileName: url.lastPathComponent,
                 snippet: snippet,
                 category: instant.category
@@ -73,13 +73,8 @@ enum PhotoAnalyzer {
     private static func semanticCategoryFromVisionSnippet(_ text: String) -> String? {
         let marker = "image: "
         guard text.lowercased().hasPrefix(marker) else { return nil }
-        let labels = String(text.dropFirst(marker.count)).lowercased()
-        for (folder, keywords) in SemanticFolders.anchors {
-            if keywords.contains(where: { labels.contains($0) }) {
-                return folder
-            }
-        }
-        return nil
+        let labels = String(text.dropFirst(marker.count))
+        return SemanticFolders.matchCategory(in: labels)
     }
 
     private static func sceneLabelsFromSnippet(_ snippet: String?) -> [String] {

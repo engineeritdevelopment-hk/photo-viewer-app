@@ -9,7 +9,7 @@ struct PhotoViewerApp: App {
             ContentView()
                 .environment(appUpdate)
                 .appUpdateAlerts(using: appUpdate)
-                .installTitlebarLeadingAccessory(appUpdate: appUpdate)
+                .installTitlebarInfoButton(appUpdate: appUpdate)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
         }
         .defaultSize(width: 1080, height: 640)

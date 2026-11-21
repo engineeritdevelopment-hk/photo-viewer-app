@@ -52,10 +52,57 @@ struct PhotoAnnotation: Codable, Equatable, Identifiable, Sendable {
 struct PersonGroup: Codable, Equatable, Identifiable, Sendable {
     var id: String
     var displayName: String?
-    var memberPhotoPaths: [String] = []
+    var memberPhotoPaths: [String]
     var thumbnailPath: String?
     /// Cropped face JPEG in Application Support (`face-crops/`).
     var faceCropPath: String?
+    /// Framed from a photo and searched. Listed under Filter in the sidebar.
+    var isLookedUp: Bool
+
+    init(
+        id: String,
+        displayName: String? = nil,
+        memberPhotoPaths: [String] = [],
+        thumbnailPath: String? = nil,
+        faceCropPath: String? = nil,
+        isLookedUp: Bool = false
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.memberPhotoPaths = memberPhotoPaths
+        self.thumbnailPath = thumbnailPath
+        self.faceCropPath = faceCropPath
+        self.isLookedUp = isLookedUp
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case displayName
+        case memberPhotoPaths
+        case thumbnailPath
+        case faceCropPath
+        case isLookedUp
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        displayName = try container.decodeIfPresent(String.self, forKey: .displayName)
+        memberPhotoPaths = try container.decodeIfPresent([String].self, forKey: .memberPhotoPaths) ?? []
+        thumbnailPath = try container.decodeIfPresent(String.self, forKey: .thumbnailPath)
+        faceCropPath = try container.decodeIfPresent(String.self, forKey: .faceCropPath)
+        isLookedUp = try container.decodeIfPresent(Bool.self, forKey: .isLookedUp) ?? false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encodeIfPresent(displayName, forKey: .displayName)
+        try container.encode(memberPhotoPaths, forKey: .memberPhotoPaths)
+        try container.encodeIfPresent(thumbnailPath, forKey: .thumbnailPath)
+        try container.encodeIfPresent(faceCropPath, forKey: .faceCropPath)
+        try container.encode(isLookedUp, forKey: .isLookedUp)
+    }
 }
 
 enum AlbumKind: String, Codable, Sendable {
@@ -225,6 +272,7 @@ struct PhotoRecord: Identifiable, Equatable, Sendable {
     var semanticCategory: String?
     var analysisSource: AnalysisSource?
     var personGroupIds: [String]
+    var objectLabels: [String] = []
 }
 
 enum LibraryPhotoSort: String, CaseIterable, Identifiable, Sendable {
@@ -303,10 +351,15 @@ struct LibraryActivity: Equatable, Sendable {
     var analyzed: Int = 0
     var analyzeTotal: Int = 0
     var isAnalyzing = false
+    var analysisTitle = "Analyzing…"
 
     var facesProcessed: Int = 0
     var faceTotal: Int = 0
     var isFaceProcessing = false
+
+    var faceSearchDone = 0
+    var faceSearchTotal = 0
+    var isSearchingFaces = false
 
     var geocoded: Int = 0
     var geocodeTotal: Int = 0

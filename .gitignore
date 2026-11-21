@@ -17,3 +17,4 @@ PhotoViewer.xcodeproj/xcuserdata/
 # Cursor hooks (local rebuild log)
 .cursor/hooks/rebuild.log
 .cursor/hooks/.rebuild-trigger
+.cursor/hooks/.rebuild.lock

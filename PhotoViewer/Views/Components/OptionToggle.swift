@@ -56,6 +56,14 @@ struct LibraryAnalysisControls: View {
             )
 
             OptionToggle(
+                title: "Objects",
+                helpText: "Find things in each photo with an on-device detector trained on about 600 kinds of objects. Search those names under Filter → Objects.",
+                isOn: $model.objectDetectionOn,
+                compact: true,
+                disabled: optionsLocked
+            )
+
+            OptionToggle(
                 title: "Faces",
                 helpText: "Detect faces and group similar ones into people across your library. Re-run Faces to merge duplicates into one person.",
                 isOn: $model.analyzeFacesOn,
@@ -80,6 +88,7 @@ struct LibraryAnalysisControls: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(!model.isAnalysisRunning)
+            .help("Stop the current analysis, including a face search.")
         }
     }
 
@@ -87,8 +96,8 @@ struct LibraryAnalysisControls: View {
         if model.activity.isCataloging {
             return "Wait until indexing finishes."
         }
-        if !model.categoryDetectionOn && !model.analyzeFacesOn {
-            return "Select Categories and/or Faces to run analysis."
+        if !model.categoryDetectionOn && !model.objectDetectionOn && !model.analyzeFacesOn {
+            return "Select Categories, Objects, and/or Faces to run analysis."
         }
         return "Run on-device analysis for the current library."
     }

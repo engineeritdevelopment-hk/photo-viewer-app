@@ -2,7 +2,6 @@ import Foundation
 import PDFKit
 import UniformTypeIdentifiers
 import Vision
-import AppKit
 
 enum ContentExtractor {
     private static let maxSnippetLength = 600
@@ -50,23 +49,28 @@ enum ContentExtractor {
     }
 
     private static func extractImage(from url: URL) -> String? {
-        guard let image = NSImage(contentsOf: url),
-              let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-        else { return nil }
-
-        if let ocr = runOCR(on: cgImage, level: .fast), !ocr.isEmpty {
-            return truncate(ocr)
+        autoreleasepool {
+            // Full-resolution decodes dominate analysis RAM. OCR and scene labels stay reliable at 1024px.
+            guard let cgImage = FaceCropExtractor.loadCGImage(url: url, maxPixel: 1024) else { return nil }
+            let labels = classifyImage(cgImage)
+            let ocr = runOCR(on: cgImage, level: .fast)
+            switch (labels, ocr) {
+            case let (labels?, ocr?) where !ocr.isEmpty:
+                return truncate(labels + "\n" + ocr)
+            case let (labels?, _):
+                return labels
+            case let (nil, ocr?) where !ocr.isEmpty:
+                return truncate(ocr)
+            default:
+                return nil
+            }
         }
-        if let ocr = runOCR(on: cgImage, level: .accurate), !ocr.isEmpty {
-            return truncate(ocr)
-        }
-        return classifyImage(cgImage)
     }
 
     private static func runOCR(on cgImage: CGImage, level: VNRequestTextRecognitionLevel) -> String? {
         let request = VNRecognizeTextRequest()
         request.recognitionLevel = level
-        request.usesLanguageCorrection = true
+        request.usesLanguageCorrection = false
 
         let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
         do {

@@ -20,4 +20,25 @@ final class SemanticCategoryTests: XCTestCase {
             "Food"
         )
     }
+
+    func testWeddingSceneBeatsGenericPeople() {
+        XCTAssertEqual(
+            SemanticFolders.matchCategory(in: "Image: people, celebration, wedding"),
+            "Events"
+        )
+    }
+
+    func testPortraitWithoutAnEventIsPeople() {
+        XCTAssertEqual(
+            SemanticFolders.matchCategory(in: "Image: people, adult, clothing"),
+            "People"
+        )
+    }
+
+    func testPlantSceneIsNature() {
+        XCTAssertEqual(
+            SemanticFolders.matchCategory(in: "Image: plant, flower"),
+            "Nature"
+        )
+    }
 }

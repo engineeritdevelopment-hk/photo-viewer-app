@@ -21,6 +21,17 @@ struct LibraryActiveFilterBar: View {
                         .lineLimit(2)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("Active filters: \(model.viewFilterSummary)")
+
+                if model.filteredPersonId != nil {
+                    Toggle(isOn: $model.highlightsFilteredFace) {
+                        Label("Highlight face", systemImage: "person.crop.rectangle")
+                    }
+                    .toggleStyle(.button)
+                    .controlSize(.small)
+                    .help("Keep a frame on this person's face while moving between photos")
+                }
 
                 Button("Show all", action: onReset)
                     .controlSize(.small)
@@ -31,9 +42,6 @@ struct LibraryActiveFilterBar: View {
             .background(.regularMaterial)
             .overlay(alignment: .top) { Divider() }
             .shadow(color: .black.opacity(0.12), radius: 8, y: -2)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Active filters: \(model.viewFilterSummary)")
-            .accessibilityHint("Double-tap Show all to clear filters")
         }
     }
 }
