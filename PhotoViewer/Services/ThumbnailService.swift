@@ -6,8 +6,11 @@ import ImageIO
 actor ThumbnailService {
     private let memory = NSCache<NSString, NSImage>()
     private let maxConcurrent = 6
+    private let maxViewerConcurrent = 3
     private var active = 0
+    private var viewerActive = 0
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var viewerWaiters: [CheckedContinuation<Void, Never>] = []
 
     init() {
         memory.countLimit = 400
@@ -15,6 +18,18 @@ actor ThumbnailService {
     }
 
     func thumbnail(for url: URL, maxPixel: Int = 320) async -> NSImage? {
+        await loadImage(for: url, maxPixel: maxPixel, viewerPriority: false)
+    }
+
+    func fullImage(for url: URL, maxPixel: Int = 2048) async -> NSImage? {
+        await loadImage(for: url, maxPixel: maxPixel, viewerPriority: true)
+    }
+
+    func prefetchFullImage(for url: URL, maxPixel: Int = 2048) async {
+        _ = await loadImage(for: url, maxPixel: maxPixel, viewerPriority: true)
+    }
+
+    private func loadImage(for url: URL, maxPixel: Int, viewerPriority: Bool) async -> NSImage? {
         let key = cacheKey(url: url, maxPixel: maxPixel) as NSString
         if let cached = memory.object(forKey: key) { return cached }
         if let disk = loadDisk(key: key as String) {
@@ -22,8 +37,20 @@ actor ThumbnailService {
             return disk
         }
 
-        await acquireSlot()
-        defer { Task { await releaseSlot() } }
+        if viewerPriority {
+            await acquireViewerSlot()
+        } else {
+            await acquireSlot()
+        }
+        defer {
+            if viewerPriority {
+                releaseViewerSlot()
+            } else {
+                releaseSlot()
+            }
+        }
+
+        if let cached = memory.object(forKey: key) { return cached }
 
         guard FileManager.default.isReadableFile(atPath: url.path) else { return nil }
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
@@ -39,10 +66,6 @@ actor ThumbnailService {
         memory.setObject(image, forKey: key)
         saveDisk(image: image, key: key as String)
         return image
-    }
-
-    func fullImage(for url: URL, maxPixel: Int = 2048) async -> NSImage? {
-        await thumbnail(for: url, maxPixel: maxPixel)
     }
 
     private func cacheKey(url: URL, maxPixel: Int) -> String {
@@ -89,6 +112,25 @@ actor ThumbnailService {
         active = max(0, active - 1)
         if let next = waiters.first {
             waiters.removeFirst()
+            next.resume()
+        }
+    }
+
+    private func acquireViewerSlot() async {
+        if viewerActive < maxViewerConcurrent {
+            viewerActive += 1
+            return
+        }
+        await withCheckedContinuation { continuation in
+            viewerWaiters.append(continuation)
+        }
+        viewerActive += 1
+    }
+
+    private func releaseViewerSlot() {
+        viewerActive = max(0, viewerActive - 1)
+        if let next = viewerWaiters.first {
+            viewerWaiters.removeFirst()
             next.resume()
         }
     }

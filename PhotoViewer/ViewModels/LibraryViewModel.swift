@@ -1378,6 +1378,12 @@ final class LibraryViewModel {
         await thumbnails.fullImage(for: URL(fileURLWithPath: path))
     }
 
+    func prefetchFullImage(for path: String) {
+        Task(priority: .userInitiated) {
+            await thumbnails.prefetchFullImage(for: URL(fileURLWithPath: path))
+        }
+    }
+
     /// Semantic / analysis categories for one photo (fullscreen viewer).
     func analysisCategories(for path: String) async -> [String] {
         guard let store = index, let record = try? await store.record(for: path) else { return [] }

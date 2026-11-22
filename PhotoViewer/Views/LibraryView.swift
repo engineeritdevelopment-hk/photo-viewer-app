@@ -418,7 +418,10 @@ struct LibraryView: View {
                                     thumbnailLoader: model.thumbnail(for:),
                                     dragPayload: payload,
                                     onSingleTap: { model.toggleGridSelection(path: path) },
-                                    onDoubleTap: { selectedPhoto = path }
+                                    onDoubleTap: {
+                                        model.prefetchFullImage(for: path)
+                                        selectedPhoto = path
+                                    }
                                 )
                                 .equatable()
                                 .contextMenu {

@@ -132,6 +132,24 @@ struct PhotoDetailView: View {
                     .padding(.bottom, 72)
                     .frame(maxHeight: .infinity, alignment: .bottom)
             }
+
+            if let position = positionLabel, shouldShowFloatingPosition {
+                Text(position)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 6)
+                    .background(.black.opacity(0.42), in: Capsule())
+                    .overlay {
+                        Capsule(style: .continuous)
+                            .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                    }
+                    .padding(.top, 14)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .allowsHitTesting(false)
+                    .accessibilityLabel("Photo \(position)")
+                    .transition(.opacity)
+            }
         }
         .onAppear { scheduleChromeAutoHide() }
         .focusable()
@@ -222,6 +240,11 @@ struct PhotoDetailView: View {
 
     private var bottomChromeOpacity: Double {
         metadataExpanded ? 1 : (chromeVisible ? 1 : 0)
+    }
+
+    /// Shown when the auto-hidden chrome would hide the position in the title bar.
+    private var shouldShowFloatingPosition: Bool {
+        !chromeVisible && !metadataExpanded
     }
 
     private func notePointerActivity() {
@@ -511,9 +534,7 @@ struct PhotoDetailView: View {
             return
         }
         let currentPath = path
-        let faces = await model.withInterfaceWork {
-            await model.highlightedFaces(on: currentPath)
-        }
+        let faces = await model.highlightedFaces(on: currentPath)
         guard currentPath == path else { return }
         highlightedFaces = faces
     }
@@ -584,24 +605,37 @@ struct PhotoDetailView: View {
     }
 
     private func loadForCurrentPath() async {
-        isLoading = true
-        image = nil
+        let photoPath = path
         photoCategories = []
         detailFacts = []
         locatedCoordinate = nil
-        annotation = model.annotation(for: path)
-        isFavorite = model.isFavorite(path: path)
-        let photoPath = path
+        annotation = model.annotation(for: photoPath)
+        isFavorite = model.isFavorite(path: photoPath)
+
+        let preview = await model.thumbnail(for: photoPath)
+        guard photoPath == path else { return }
+        if let preview {
+            image = preview
+            isLoading = false
+        } else {
+            image = nil
+            isLoading = true
+        }
+
         async let categories = model.analysisCategories(for: photoPath)
         async let loadedImage = model.fullImage(for: photoPath)
         async let coordinate = Task.detached {
             Self.coordinate(at: photoPath)
         }.value
         photoCategories = await categories
-        image = await loadedImage
         locatedCoordinate = await coordinate
-        isLoading = false
-        keysFocused = true
+        if let loadedImage, photoPath == path {
+            image = loadedImage
+        }
+        if photoPath == path {
+            isLoading = false
+            keysFocused = true
+        }
         if metadataExpanded {
             await loadDetailFacts()
         }
